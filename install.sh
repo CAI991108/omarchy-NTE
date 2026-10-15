@@ -20,8 +20,10 @@
 #   * No sudo. This only writes inside $HOME. Package installation is a separate,
 #     human-reviewed step; see README.md.
 #
-#   * Path rewriting. Any occurrence of $HOME (in file contents *and* in
-#     symlink targets) is rewritten to the current user's $HOME.
+#   * Symlink targets are rewritten. The three theme-following symlinks in
+#     config/ point at an absolute home path recorded at capture time; those are
+#     rewritten to the current user's $HOME so they keep working on a new machine.
+#     File *contents* are deployed verbatim.
 #
 # Usage:
 #   ./install.sh                 # deploy
