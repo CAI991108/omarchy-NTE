@@ -36,10 +36,6 @@
     （56 个变体，含圆角）
   - 换 Omarchy 主题时，`fcitx5-follow` 钩子会自动同步输入法配色
 
-<p align="center">
-  <img src="assets/preview.webp" alt="Catppuccin 壁纸" width="100%">
-</p>
-
 ---
 
 ## 快速一键安装 —— **Omarchy** 3.8.2
@@ -104,7 +100,6 @@ systemctl --user restart app-org.fcitx.Fcitx5@autostart.service
 ### 5. 壁纸
 
 壁纸放在 `config/omarchy/backgrounds/catppuccin/` —— 正是 Omarchy 会自动扫描的路径。
-部署后按 <kbd>Super</kbd> + <kbd>Ctrl</kbd> + <kbd>Space</kbd> 即可选中它。
 
 ---
 
