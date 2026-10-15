@@ -151,7 +151,7 @@ omarchy-NTE/
 |---|---|
 | **壁纸只留 1 张** | 其余 9 张（约 13 MB）未纳入，避免 git 历史永久变重。需要时从原处自行复制到 `~/.config/omarchy/backgrounds/<主题名>/`。 |
 | **DSH 插件配置未纳入** | `~/.dsh/profiles/web/` 是本 AI 界面的配置，严格说不属于桌面配置。其中 `systemd/user/dsh-web.service` **有**纳入（它是用户自己写的单元）。 |
-| **`git/config` 是精简版** | 它去掉了 Omarchy 默认的一些实用设置（`rerere`、`autoSetupRemote`、`diff.algorithm` 等），另外仓库版本**已移除 `[user]` 身份**。 |
+| **`git/config` 不含身份/凭据** | 只收录通用偏好（alias、rerere、diff 可读性、排序等 10 项）。`[user]` 身份与 `[credential]` gh helper **不入库**，各自在机器的 `~/.config/git/config` 里。 |
 | **`config/omarchy/current/` 未纳入** | 生成状态，每次换主题被整个重建。 |
 | **5 个 `.sample` 钩子未纳入** | 经比对与 Omarchy 默认逐字节相同，属官方默认值。 |
 

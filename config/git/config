@@ -1,15 +1,50 @@
+# git 配置 —— 基于 Omarchy 出厂默认（Omarchy 3.8.2）
+#
+# ⚠️ 这份模板故意【不含】以下内容：
+#
+#   [user] 段（name/email）
+#       真实姓名 + 学校邮箱。仓库是公开的，所以身份只存在于各机器的
+#       ~/.config/git/config 里，不纳入版本控制。
+#
+#   [credential] 段（gh credential helper）
+#       属于机器/账号专属设置。新机器上执行 `gh auth login` 会自动写入。
+#
+# 启用这些默认值的原因、以及本机之前为何一条都没生效，见
+
+# See https://git-scm.com/docs/git-config
+
 [alias]
 	co = checkout
 	br = branch
 	ci = commit
 	st = status
-[pull]
-	rebase = true
+
 [init]
 	defaultBranch = master
-[credential "https://github.com"]
-	helper = 
-	helper = !/usr/bin/gh auth git-credential
-[credential "https://gist.github.com"]
-	helper = 
-	helper = !/usr/bin/gh auth git-credential
+
+[pull]
+	rebase = true 			 # Rebase (instead of merge) on pull
+
+[push]
+	autoSetupRemote = true   # Automatically set upstream branch on push
+
+[diff]
+	algorithm = histogram    # Clearer diffs on moved/edited lines
+	colorMoved = plain       # Highlight moved blocks in diffs
+	mnemonicPrefix = true    # More intuitive refs in diff output
+
+[commit]
+	verbose = true           # Include diff comment in commit message template
+
+[column]
+	ui = auto 			     # Output in columns when possible
+
+[branch]
+	sort = -committerdate    # Sort branches by most recent commit first
+
+[tag]
+	sort = -version:refname  # Sort version numbers as you would expect
+
+[rerere]
+	enabled = true           # Record and reuse conflict resolutions
+	autoupdate = true        # Apply stored conflict resolutions automatically
