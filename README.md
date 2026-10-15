@@ -4,7 +4,8 @@
 以及把它们带到一台新机器上的方法。
 
 > **这个仓库包含什么**：只包含**我真正改过的东西**。
-> 每个文件都与 Omarchy 官方默认值逐字节比对过，一致的一律不收。
+> 每个文件都与 Omarchy 官方默认值逐字节比对过，与默认完全一致的一律不收 ——
+> 所以仓库里出现的每个文件都是有意为之的改动。
 
 ---
 
@@ -57,8 +58,9 @@ cp -f new.conf cfg/t.conf
 
 代价：改完 `~/.config` 后要重新同步回仓库。收益：配置永远不会被 Omarchy 悄悄改掉。
 
-完整证据链（含源码行号与实测输出）见
-
+> 补充：这三个"主题跟随"符号链接（`mako/config`、`btop/themes/current.theme`、
+> `nvim/lua/plugins/theme.lua`）本身就是 Omarchy 用符号链接实现主题自动切换的机制，
+> 所以它们**必须保持为符号链接**，不能复制成普通文件。
 
 ---
 
@@ -140,7 +142,7 @@ omarchy-NTE/
 │   │   └── themes/                  # 自定义主题（暂空，留给以后）
 │   ├── nvim/ systemd/ fontconfig/ git/ ...
 │   └── *.conf  mimeapps.list  user-dirs.dirs 等散文件
-├── packages/                        # 包清单与环境快照
+└── packages/                        # 包清单与环境快照
 ```
 
 ---
@@ -185,6 +187,8 @@ done
 
 | 泄漏内容 | 位置 | 修复 |
 |---|---|---|
+| 机器主机名 | 仓库文档 | 替换为占位符 |
+| 家目录绝对路径 `/home/<用户名>` | 仓库文档、`install.sh` | 替换为 `$HOME` |
 | **符号链接的目标**里也含家目录路径 | `config/mako/config`、`config/btop/themes/current.theme`、`config/nvim/lua/plugins/theme.lua` | 改为存储 `$HOME/...`，安装时展开 |
 
 > 最后一条最隐蔽：**`git grep` 不会跟进符号链接的内容**，
@@ -197,10 +201,9 @@ done
 
 - ✅ 默认分支 `main` 只有重写后的提交；正常 `git clone` / `fetch` 拿不到旧提交
 - ✅ 旧提交不在任何分支或 ref 中，网页列表和搜索都看不到
-- 🔴 但若**已知确切 SHA**，`https://api.github.com/repos/.../commits/<旧SHA>` 仍会返回内容
+- 🔴 但若**已知确切 SHA**，通过 GitHub API 请求该提交仍会返回内容
 
-这是 GitHub 的既定行为，用户无法触发其内部 GC。**本项目已评估并接受该残留**
-（旧提交不可被发现，且账号的 GitHub 公开资料本就包含真实姓名与邮箱）。
+这是 GitHub 的既定行为，用户无法触发其内部 GC。**本项目已评估并接受该残留**。
 若要 100% 清除，唯一可靠办法是**删除仓库并重建**。
 
 ### 提交元数据里的邮箱

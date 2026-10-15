@@ -9,7 +9,8 @@
 #   [credential] 段（gh credential helper）
 #       属于机器/账号专属设置。新机器上执行 `gh auth login` 会自动写入。
 #
-# 启用这些默认值的原因、以及本机之前为何一条都没生效，见
+# 这 10 项偏好来自 Omarchy 的出厂模板
+# （~/.local/share/omarchy/config/git/config，那只是一个模板，git 从不读取它）。
 
 # See https://git-scm.com/docs/git-config
 
