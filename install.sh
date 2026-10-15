@@ -74,20 +74,23 @@ run() {
   fi
 }
 
-# Rewrite a capture-time home path to the current $HOME.
+# Rewrite a symlink target to an absolute path under the current $HOME.
 #
-# Handles /home/<user>, /Users/<user> and /root without needing to know the
-# original username, so the repo stays portable. Implemented with bash string
-# expansion rather than sed to avoid delimiter-escaping bugs.
+# The three theme-following symlinks in config/ are stored as "$HOME/.config/..."
+# so the repo never records a real username. On deploy they become absolute, which
+# is what a symlink needs in order to resolve. Older captures may instead hold a
+# literal /home/<user> path; both forms are handled.
 rewrite_home() {
   local text="$1"
-  if [[ $text == "$CAPTURED_HOME"* ]]; then
-    printf '%s' "$HOME${text#"$CAPTURED_HOME"}"
-  elif [[ $text =~ ^(/home/[^/]+|/Users/[^/]+|/root)(/.*)?$ ]]; then
-    printf '%s' "$HOME${BASH_REMATCH[2]}"
-  else
-    printf '%s' "$text"
-  fi
+  case "$text" in
+    '$HOME'*)                 printf '%s' "$HOME${text#\$HOME}" ;;
+    '~'*)                     printf '%s' "$HOME${text#\~}" ;;
+    "$CAPTURED_HOME"*)        printf '%s' "$HOME${text#"$CAPTURED_HOME"}" ;;
+    /home/*/*|/Users/*/*)     printf '%s' "$HOME/${text#/*/*/}" ;;
+    /home/*|/Users/*)         printf '%s' "$HOME" ;;
+    /root*)                   printf '%s' "$HOME${text#/root}" ;;
+    *)                        printf '%s' "$text" ;;
+  esac
 }
 
 
