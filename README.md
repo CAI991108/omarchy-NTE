@@ -165,11 +165,48 @@ omarchy-NTE/
 - `~/.config/gh/hosts.yml`（含 GitHub CLI 的 oauth token）经 git 规则实测**不会入库**
 - 仓库内的 `git/config` **已移除**真实姓名与 CUHK 邮箱
 
-### ⚠️ 但提交元数据仍然会带上邮箱
+审计方式（不是"看起来没问题"，而是逐对象扫描）：
+
+```bash
+# 凭据：扫全部提交的真实令牌形态
+git rev-list --all | while read c; do
+  git grep -InE '(gho_|ghp_|ghu_)[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|BEGIN [A-Z ]*PRIVATE KEY' "$c"
+done
+
+# 个人信息：连符号链接的 blob 一起扫（git grep 默认不跟进符号链接内容）
+for s in $(git cat-file --batch-all-objects --batch-check='%(objecttype) %(objectname)' | awk '$1=="blob"{print $2}'); do
+  git cat-file blob "$s" | grep -E '你的主机名|/home/你的用户名' && echo "命中 $s"
+done
+```
+
+### 曾经的隐私泄漏与修复（记录在案）
+
+本仓库**第一次公开时曾泄漏**两类信息，后经**历史重写 + 强制推送**清除：
+
+| 泄漏内容 | 位置 | 修复 |
+|---|---|---|
+| **符号链接的目标**里也含家目录路径 | `config/mako/config`、`config/btop/themes/current.theme`、`config/nvim/lua/plugins/theme.lua` | 改为存储 `$HOME/...`，安装时展开 |
+
+> 最后一条最隐蔽：**`git grep` 不会跟进符号链接的内容**，
+> 所以普通扫描会漏掉 —— 必须遍历对象库里的 blob 才能发现。
+> 这三个符号链接的"文件内容"就是它们的目标路径字符串。
+
+### ⚠️ 残留：旧提交仍可通过确切 SHA 从 GitHub 读取
+
+历史重写后，GitHub **不会立即删除不可达对象**。实测：
+
+- ✅ 默认分支 `main` 只有重写后的提交；正常 `git clone` / `fetch` 拿不到旧提交
+- ✅ 旧提交不在任何分支或 ref 中，网页列表和搜索都看不到
+- 🔴 但若**已知确切 SHA**，`https://api.github.com/repos/.../commits/<旧SHA>` 仍会返回内容
+
+这是 GitHub 的既定行为，用户无法触发其内部 GC。**本项目已评估并接受该残留**
+（旧提交不可被发现，且账号的 GitHub 公开资料本就包含真实姓名与邮箱）。
+若要 100% 清除，唯一可靠办法是**删除仓库并重建**。
+
+### 提交元数据里的邮箱
 
 `git commit` 会把 `user.name` / `user.email` 写进**每一个 commit**，
-这不在 `.gitignore` 能管的范围内。本机的全局身份里带着真实邮箱，
-**公开仓库里它会永久可搜、难以撤回**。
+这不在 `.gitignore` 能管的范围内。
 
 **本仓库已经处理好了** —— 仓库级身份已设为 GitHub noreply，没有改动你的全局设置：
 
