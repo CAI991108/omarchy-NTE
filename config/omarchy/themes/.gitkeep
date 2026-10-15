@@ -1,0 +1,10 @@
+# 用户自定义 Omarchy 主题放这里
+#
+# 每个主题是一个子目录，至少包含一个 colors.toml。
+# Omarchy 会把 ~/.config/omarchy/themes/<名字>/ 视为你自己的主题，
+# 并出现在 Super + Space 的 Style > Theme 菜单里。
+#
+# 详细说明见官方手册：
+#   https://omarchy.org/manual/making-your-own-theme/
+#
+# 这个文件只是占位，让 git 保留空目录；可以安全删除。

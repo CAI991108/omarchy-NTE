@@ -1,0 +1,7 @@
+catppuccin-fcitx5-git
+dbeaver-ce-bin
+glow-git
+lib32-gtk2
+pokemon-colorscripts-git
+wechat-bin
+wemeet-bin

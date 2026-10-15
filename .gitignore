@@ -1,0 +1,108 @@
+# ─────────────────────────────────────────────────────────────
+#  omarchy-NTE — 忽略规则
+#  两条底线：(1) 绝不提交凭据；(2) 绝不提交运行时生成状态 / 大体积 profile
+# ─────────────────────────────────────────────────────────────
+
+# ── 🔴 凭据红线：这些文件含 token / 私钥，一旦提交即泄露 ──────
+config/gh/
+config/gh/hosts.yml
+config/gh/config.yml
+config/**/hosts.yml
+config/**/Trust Tokens*
+config/**/*.key
+config/**/*.pem
+config/**/*.p12
+config/**/.env
+config/**/.env.*
+config/**/credentials
+config/**/credentials.*
+config/**/*token*
+config/**/Cookies
+config/**/Cookies-journal
+config/**/Login Data*
+config/**/keyring*
+config/**/.netrc
+config/**/.git-credentials
+**/id_rsa*
+**/id_ed25519*
+**/*.ppk
+**/known_hosts*
+
+# ── 浏览器 / 编辑器 profile（体积巨大且含会话与登录态）─────────
+config/chromium/
+config/BraveSoftware/
+config/google-chrome/
+config/Code/
+config/VSCodium/
+config/libreoffice/
+config/Typora/
+config/Pinta/
+config/dconf/
+config/gtk-3.0/
+config/gtk-4.0/
+config/go/telemetry/
+config/ibus/
+config/evince/
+config/kew/
+config/cliamp/
+config/electron*/
+
+# ── Omarchy 生成状态（每次换主题会被重写，纳入只会产生噪声 diff）──
+config/omarchy/current/
+config/omarchy/**/*.backup
+config/omarchy/**/*.bak
+config/omarchy/**/*.old
+config/omarchy/**/*.log
+
+# ── 运行时状态：会话、缓存、锁、socket（实测会漏进仓库，别删这些）──
+config/herdr/session.json
+config/herdr/.plugins.lock
+config/herdr/release-notes.json
+config/herdr/*.sock
+config/fcitx5/conf/cached_layouts
+config/**/session.json
+config/**/*.lock
+**/*.sock
+
+# ── 官方自带的示例钩子 / 模板（属于 Omarchy 默认值，不是用户代码）──
+config/omarchy/hooks/**/*.sample
+config/omarchy/themed/*.sample
+
+# ── Omarchy refresh 会自动重建的生成物 ────────────────────────
+config/autostart/walker.desktop
+config/systemd/user/*.wants/
+config/systemd/user/app-walker@autostart.service.d/
+
+# ── Omarchy 官方源码：绝不属于本仓库（282M，被 omarchy update 管理）──
+.local/share/omarchy/
+local/share/omarchy/
+
+# ── node_modules / 缓存 / 构建产物 ─────────────────────────────
+dsh/node_modules/
+**/node_modules/
+**/.cache/
+**/Cache/
+**/CachedData/
+**/GPUCache/
+**/Code Cache/
+**/logs/
+**/*.log
+**/*.pyc
+__pycache__/
+
+# ── 旧备份 / 临时文件 ─────────────────────────────────────────
+config/nvim.backup.*
+*.bak
+*.bak.*
+*.orig
+*.rej
+*.swp
+*~
+*.tmp
+
+# ── 系统垃圾 ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.pid
+*.sock
+Singleton*
