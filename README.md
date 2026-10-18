@@ -38,6 +38,10 @@
 
 >「蓝色大肥鱼」、像素星野、「哦鲸鲸…」、神鲸四档推理滑轨
 
+<p align="center">
+  <img src="assets/dsh/brand.webp" alt="侧栏：蓝色大肥鱼品牌、新会话、插件、自动化任务" width="281">
+</p>
+
 ### 轻量、足够有趣的组件
 
 | Feature | 来自 | 怎么做的 |
@@ -75,9 +79,9 @@ cd ~/.dsh/profiles/web && pnpm install
 <br>
 
 - **版本对得上**：配置钉在 DSH `0.2.1-rc.2`，bundle 的 patch id（`ui-chat`、`ui-theme`、
-  `permission`…）全部存在」。
+  `permission`…）全部存在。
 - **路径是相对的**：两个本地插件用 `link:../../plugins/...`，在仓库内和部署到
-  `~/.dsh` 。
+  `~/.dsh`。
 - **依赖可复现**：`pnpm-lock.yaml` 锁住 179 个包，安装时用 `--frozen-lockfile`。
 - **两个补丁**：`patches/omaseek-pixel@0.2.1.patch` 和 `patches/omaseek-themes@0.3.1.patch`
   由 `pnpm-workspace.yaml` 的 `patchedDependencies` 应用。
