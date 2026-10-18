@@ -23,6 +23,7 @@
 | Omarchy branding、壁纸 | `config/omarchy/branding/`、`config/omarchy/backgrounds/` |
 | Neovim | `config/nvim/` |
 | 复现所需的包清单 | `packages/` |
+| **DSH（AI 界面）profile 与本地插件** | `dsh/` |
 
 ---
 
@@ -122,6 +123,9 @@ omarchy-NTE/
 │   │   └── themes/                  # 自定义主题（暂空，留给以后）
 │   ├── nvim/ systemd/ fontconfig/ git/ ...
 │   └── *.conf  mimeapps.list  user-dirs.dirs 等散文件
+├── dsh/                             # DSH (AI 界面) profile 与本地插件
+│   ├── profiles/web/                # → ~/.dsh/profiles/web
+│   └── plugins/                     # → ~/.dsh/plugins
 └── packages/                        # 包清单与环境快照
 ```
 

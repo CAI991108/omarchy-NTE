@@ -1,0 +1,5 @@
+# Inserts the brand-cover client row. It occupies `sidebar.brand.mark`, which the
+# official brand plugin leaves as the only composition route for a custom mark.
+- insert:
+    - id: brand-cover
+      name: '@local/dsh-brand-cover'

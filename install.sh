@@ -243,6 +243,49 @@ while IFS= read -r -d '' dir; do
   fi
 done < <(find "$SRC_CONFIG" -name '.gitkeep' -printf '%h\0' | sort -zu)
 
+# ── 2c. deploy the DSH profile and its local plugins (optional) ───────────────
+# dsh/ mirrors ~/.dsh exactly, so the profile's relative "link:../../plugins/..."
+# specs resolve both inside the repo and after deployment. node_modules is not
+# tracked; the deployed profile needs `pnpm install` before it will run.
+SRC_DSH="$REPO_DIR/dsh"
+if [[ -d $SRC_DSH ]]; then
+  step "2c. DSH 配置与本地插件"
+
+  dest_profile="$HOME/.dsh/profiles/web"
+  dest_plugins="$HOME/.dsh/plugins"
+  dsh_deployed=0 dsh_skipped=0
+
+  while IFS= read -r -d '' src; do
+    rel="${src#"$SRC_DSH"/}"
+    case "$rel" in
+      profiles/web/*) target="$dest_profile/${rel#profiles/web/}" ;;
+      plugins/*)      target="$dest_plugins/${rel#plugins/}" ;;
+      *)              continue ;;
+    esac
+
+    mkdir -p "$(dirname "$target")"
+    if [[ -f $target ]] && cmp -s "$src" "$target"; then
+      ((dsh_skipped++)) || true
+      continue
+    fi
+
+    $DRY_RUN || backup_file "$target"
+    run cp --remove-destination "$src" "$target"
+    ((dsh_deployed++)) || true
+    if $DRY_RUN; then
+      printf '%s    would deploy:%s dsh/%s\n' "$C_DIM" "$C_RESET" "$rel"
+    fi
+  done < <(find "$SRC_DSH" -type f -print0 | sort -z)
+
+  ok "DSH：已部署 $dsh_deployed 个文件，$dsh_skipped 个已是最新"
+  if ! $DRY_RUN && (( dsh_deployed > 0 )); then
+    info "  依赖还没安装。要让配置生效，执行："
+    info "    cd $dest_profile && pnpm install"
+  fi
+else
+  dim "  未找到 dsh/，跳过 DSH 配置"
+fi
+
 # ── 3. systemd user units ─────────────────────────────────────────────────────
 step "3. systemd 用户单元"
 

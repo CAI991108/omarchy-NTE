@@ -1,0 +1,30 @@
+{
+  "name": "dsh-profile-web",
+  "private": true,
+  "dependencies": {
+    "@local/dsh-brand-cover": "link:../../plugins/dsh-brand-cover",
+    "@local/dsh-effort-slider": "link:../../plugins/dsh-effort-slider",
+    "dsh-better-sidebar": "^0.28.0",
+    "dsh-cost-meter": "^1.9.3",
+    "dsh-mattpocock-skills-deck": "1.9.0-beta.4",
+    "omaseek-music": "^0.2.6",
+    "omaseek-pixel": "^0.2.1",
+    "omaseek-themes": "^0.3.1"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "omaseek-music",
+        "omaseek-pixel",
+        "omaseek-themes",
+        "dsh-better-sidebar",
+        "dsh-cost-meter",
+        "dsh-mattpocock-skills-deck",
+        "@local/dsh-brand-cover",
+        "@local/dsh-effort-slider"
+      ]
+    }
+  }
+}
