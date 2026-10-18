@@ -39,7 +39,7 @@
 >「蓝色大肥鱼」、像素星野、「哦鲸鲸…」、神鲸四档推理滑轨
 
 <p align="center">
-  <img src="assets/dsh/brand.webp" alt="侧栏：蓝色大肥鱼品牌、新会话、插件、自动化任务" width="281">
+  <img src="assets/dsh/brand-slider.webp" alt="侧栏品牌封面与四档推理滑轨" width="100%">
 </p>
 
 ### 轻量、足够有趣的组件
@@ -54,10 +54,6 @@
 | **Omarchy 配色** | `omaseek-themes` | 把 omarchy.org 首页的 22 套配色逐套移植成 DSH 的 32 个 design token |
 | **侧栏小玩意** | `omaseek-music`、`dsh-cost-meter` | 常驻音乐卡片；今日花费、余额与峰谷价倒计时 |
 | **右侧栏与 skills** | `dsh-better-sidebar`、`dsh-mattpocock-skills-deck` | 文件树、编辑器、任务、侧边对话收进右栏；ISSUE 与 map 管理 |
-
-<p align="center">
-  <img src="assets/dsh/slider.webp" alt="四档推理滑轨：模型卡片里的模型与推理等级" width="460">
-</p>
 
 <p align="center">
   <img src="assets/dsh/typing.webp" alt="三句轮播的打字机标题" width="620">
