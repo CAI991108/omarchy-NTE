@@ -52,9 +52,9 @@
 | **右侧栏与 skills** | `dsh-better-sidebar`、`dsh-mattpocock-skills-deck` | 文件树、编辑器、任务、侧边对话收进右栏；ISSUE 与 map 管理 |
 
 <p align="center">
-  <img src="assets/dsh/brand.webp" alt="侧栏：蓝色大肥鱼品牌、新会话、插件、自动化任务" width="281">
+  <img src="assets/dsh/brand.webp" alt="侧栏：蓝色大肥鱼品牌、新会话、插件、自动化任务" width="200">
   &nbsp;&nbsp;&nbsp;
-  <img src="assets/dsh/slider.webp" alt="四档推理滑轨：模型卡片里的模型与推理等级" width="460">
+  <img src="assets/dsh/slider.webp" alt="四档推理滑轨：模型卡片里的模型与推理等级" width="350">
 </p>
 
 <p align="center">
