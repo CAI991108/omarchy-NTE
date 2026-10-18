@@ -1,0 +1,5 @@
+# ADRs go here: docs/adr/NNNN-short-title.md
+#
+# One file per architectural decision, numbered sequentially. Written lazily by
+# /domain-modeling when a decision actually gets made — an empty directory is fine
+# until then. This placeholder only exists so git keeps the directory.

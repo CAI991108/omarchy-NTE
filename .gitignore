@@ -9,6 +9,13 @@
 /docs/
 /HANDOFF*.md
 
+# 例外：技能套件的配置产物要跟着仓库走（agent 需要从远端读到它们）。
+# 注意 git 的规则 —— 父目录被忽略后，必须先重新包含父目录，文件级否定才生效。
+!/docs/
+/docs/*
+!/docs/agents/
+!/docs/adr/
+
 # ── 🔴 凭据红线：这些文件含 token / 私钥，一旦提交即泄露 ──────
 config/gh/
 config/gh/hosts.yml
