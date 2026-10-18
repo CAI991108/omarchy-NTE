@@ -1,0 +1,5 @@
+# Inserts the effort-slider client row. It adds an entry to the composer dock,
+# which allocates space and is session-scoped, so it never shadows shipped UI.
+- insert:
+    - id: effort-slider
+      name: '@local/dsh-effort-slider'

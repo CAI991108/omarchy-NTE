@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Effort slider">
+  <defs>
+    <linearGradient id="effortTrack" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#101d4c"/>
+      <stop offset="1" stop-color="#5d35a0"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="#0b1020"/>
+  <rect x="10" y="27" width="44" height="10" rx="5" fill="url(#effortTrack)"/>
+  <circle cx="20" cy="32" r="4" fill="#8ba6ff"/>
+  <circle cx="32" cy="32" r="4" fill="#a68cff"/>
+  <circle cx="44" cy="32" r="4" fill="#c9a8ff"/>
+  <circle cx="40" cy="32" r="7" fill="#ffffff"/>
+</svg>

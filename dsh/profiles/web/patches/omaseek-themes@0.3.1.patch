@@ -1,0 +1,78 @@
+diff --git a/lib/client.js b/lib/client.js
+index 4cc88f6b724f664a3d229d1a4d14c8fcb240bea3..3e4b416364fb158e7d344739f1aac72ada2e15b8 100644
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1071,7 +1071,7 @@ function applyFeature(host) {
+ 
+   // Package-local store: the palettes arrive asynchronously from the Host,
+   // and the Settings page subscribes instead of polling.
+-  var state = { entries: [], error: '', loading: true, corners: 'square', custom: 0, unreadable: 0 }
++  var state = { entries: [], error: '', loading: true, corners: 'squircle', custom: 0, unreadable: 0 }
+   var notifier = createNotifier()
+   var notify = notifier.notify
+   var subscribe = notifier.subscribe
+@@ -1079,6 +1079,10 @@ function applyFeature(host) {
+   /** `{ light: id | 'base', dark: … }` — a missing slot means "automatic". */
+   var choices = loadChoices()
+ 
++  // A reader's Squircle/Square pick lives in the same package-local record as
++  // the palette choices, so it survives a page load like every other setting.
++  if (choices.corners === 'squircle' || choices.corners === 'square') state.corners = choices.corners
++
+   function loadChoices() {
+     try {
+       var raw = window.localStorage.getItem(STORAGE_KEY)
+@@ -1477,10 +1481,13 @@ function applyFeature(host) {
+   function setCorners(mode) {
+     if (cornerOff !== null) { cornerOff(); cornerOff = null }
+     state.corners = mode
++    choices.corners = mode
++    saveChoices()
+     if (CORNER_SHEET[mode] !== undefined) cornerOff = insertSheet(CORNER_SHEET[mode], 'omaseek:corners')
+     notify()
+   }
+-  // The Omarchy reading is the default: square the moment the Plugin loads.
++  // The stored pick wins; a reader who has never chosen keeps the rounded
++  // harness default rather than being forced to square on every load.
+   setCorners(state.corners)
+ 
+   ctx.effect(function () { return insertSheet(CSS, 'omaseek:base') }, 'omaseek: styles')
+diff --git a/src/client/themes.js b/src/client/themes.js
+index 56dd88788f096fb795310e8c94cedc6a51bdbbef..f012c2235267ac8408d5475d82fc9318920c7ed5 100644
+--- a/src/client/themes.js
++++ b/src/client/themes.js
+@@ -249,7 +249,7 @@ export function applyFeature(host) {
+ 
+   // Package-local store: the palettes arrive asynchronously from the Host,
+   // and the Settings page subscribes instead of polling.
+-  var state = { entries: [], error: '', loading: true, corners: 'square', custom: 0, unreadable: 0 }
++  var state = { entries: [], error: '', loading: true, corners: 'squircle', custom: 0, unreadable: 0 }
+   var notifier = createNotifier()
+   var notify = notifier.notify
+   var subscribe = notifier.subscribe
+@@ -257,6 +257,10 @@ export function applyFeature(host) {
+   /** `{ light: id | 'base', dark: … }` — a missing slot means "automatic". */
+   var choices = loadChoices()
+ 
++  // A reader's Squircle/Square pick lives in the same package-local record as
++  // the palette choices, so it survives a page load like every other setting.
++  if (choices.corners === 'squircle' || choices.corners === 'square') state.corners = choices.corners
++
+   function loadChoices() {
+     try {
+       var raw = window.localStorage.getItem(STORAGE_KEY)
+@@ -655,10 +659,13 @@ export function applyFeature(host) {
+   function setCorners(mode) {
+     if (cornerOff !== null) { cornerOff(); cornerOff = null }
+     state.corners = mode
++    choices.corners = mode
++    saveChoices()
+     if (CORNER_SHEET[mode] !== undefined) cornerOff = insertSheet(CORNER_SHEET[mode], 'omaseek:corners')
+     notify()
+   }
+-  // The Omarchy reading is the default: square the moment the Plugin loads.
++  // The stored pick wins; a reader who has never chosen keeps the rounded
++  // harness default rather than being forced to square on every load.
+   setCorners(state.corners)
+ 
+   ctx.effect(function () { return insertSheet(CSS, 'omaseek:base') }, 'omaseek: styles')

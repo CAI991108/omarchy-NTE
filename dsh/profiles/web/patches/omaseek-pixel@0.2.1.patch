@@ -1,0 +1,196 @@
+diff --git a/lib/client.js b/lib/client.js
+index 8b7432adb978b3e1a04b5095a0773df957b0e5d4..5b42147e4fa65b12a3756fb5bb4f0f1aa5de40ec 100644
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -234,16 +234,15 @@ var TITLE_SELECTOR = '[class*="titleGroup"] > span:not([class*="previewBadge"])'
+  * at the end, like the site's idle caret.
+  */
+ var HERO_PHRASES = [
+-  'We can fix every paper cut',
+-  'We can fix everything',
+-  'We can fix every missing app',
+-  'We can fix every incompatibility',
++  '与神鲸对话只需要两碗白饭🍚',
++  'Let Me GO, Let me write the JSON ～ 🎶',
++  '压力我？(・∀・) 找一车大肥鱼弄你！',
+ ]
+ 
+ /** One hero sheet for one phrase: replacement always, typing when motion is fine. */
+ function heroSheet(phrase) {
+   var len = phrase.length
+-  var ms = Math.round(len * 88)
++  var ms = Math.round(len * AVG_KEY_MS)
+   var start = 350
+   var title = TITLE_SELECTOR
+   return [
+@@ -831,20 +830,27 @@ function mountField(host, live) {
+  * prefix lives. The site renders a static "We can fix every" and types only
+  * the tail, so deleting can stop at zero; here every phrase is complete, and
+  * `shared` stops the deletion at the front the current phrase and the next
+- * share — which, for the four hero phrases, is exactly "We can fix every".
++ * share — which the configured phrases may not have at all.
+  * ───────────────────────────────────────────────────────────────────── */
+ 
+ /** Base milliseconds per keystroke, plus up to this much again at random. */
+-var KEY_MS = 58
+-var KEY_JITTER = 60
+-var WORD_PAUSE = 95
++var KEY_MS = 96
++var KEY_JITTER = 52
++var WORD_PAUSE = 140
+ var ENDING_PAUSE = 70
+ /** How often a keystroke catches, and for how long. */
+ var HESITATE_ODDS = 0.07
+ var HESITATE_MS = 140
+ var DELETE_MS = 27
+-var HOLD_MS = 2100
+-var TURN_MS = 420
++/** How long a finished phrase stays on screen before it deletes itself. */
++var HOLD_MS = 3800
++var TURN_MS = 520
++/**
++ * The average per-glyph delay the loop settles on. The `once` sheet is a single
++ * CSS animation over the whole phrase, so it reads this same figure rather than
++ * carrying its own copy of the rhythm.
++ */
++var AVG_KEY_MS = Math.round(KEY_MS + KEY_JITTER / 2)
+ 
+ /**
+  * Run the rotation on one headline span.
+@@ -892,6 +898,20 @@ function mountTyper(el, phrases, reduced) {
+     return i
+   }
+ 
++  /**
++   * Slice by UTF-16 offset without splitting a surrogate pair. Stopping between
++   * an emoji's two halves would render U+FFFD for one step, so a phrase carrying
++   * an emoji shows that whole glyph one step early instead of a broken one.
++   */
++  function sliceSafe(text, count) {
++    var end = count
++    if (end > 0 && end < text.length) {
++      var last = text.charCodeAt(end - 1)
++      if (last >= 0xd800 && last <= 0xdbff) end += 1
++    }
++    return text.slice(0, end)
++  }
++
+   var index = Math.floor(Math.random() * phrases.length)
+   var length = 0
+   var deleting = false
+@@ -909,7 +929,7 @@ function mountTyper(el, phrases, reduced) {
+ 
+   function step() {
+     var phrase = phrases[index]
+-    el.textContent = phrase.slice(0, length)
++    el.textContent = sliceSafe(phrase, length)
+ 
+     var next = wait()
+     var onward = (index + 1) % phrases.length
+@@ -1193,7 +1213,7 @@ function applyFeature(host) {
+         h('div', { className: 'omapixel-line' },
+           h('span', { className: 'omapixel-legend' }, 'Headline:'),
+           h('span', { className: 'omapixel-note' },
+-            '"We can fix every..." headline rotation on New Session page: loop forever or just play once.')),
++            'Headline rotation on New Session page: loop forever or just play once.')),
+         h('div', { className: 'omapixel-row' },
+           TYPE_MODES.map(function (mode) {
+             return h('button', {
+diff --git a/src/client/pixel.js b/src/client/pixel.js
+index c1da0a458e461612d0efdd2acc1685be79891844..888a6c0ff195b541b9b4c93cfa2df991c2cdb9b1 100644
+--- a/src/client/pixel.js
++++ b/src/client/pixel.js
+@@ -66,16 +66,15 @@ var TITLE_SELECTOR = '[class*="titleGroup"] > span:not([class*="previewBadge"])'
+  * at the end, like the site's idle caret.
+  */
+ var HERO_PHRASES = [
+-  'We can fix every paper cut',
+-  'We can fix everything',
+-  'We can fix every missing app',
+-  'We can fix every incompatibility',
++  '与神鲸对话只需要两碗白饭🍚',
++  'Let Me GO, Let me write the JSON ～ 🎶',
++  '压力我？(・∀・) 找一车大肥鱼弄你！',
+ ]
+ 
+ /** One hero sheet for one phrase: replacement always, typing when motion is fine. */
+ function heroSheet(phrase) {
+   var len = phrase.length
+-  var ms = Math.round(len * 88)
++  var ms = Math.round(len * AVG_KEY_MS)
+   var start = 350
+   var title = TITLE_SELECTOR
+   return [
+@@ -663,20 +662,27 @@ function mountField(host, live) {
+  * prefix lives. The site renders a static "We can fix every" and types only
+  * the tail, so deleting can stop at zero; here every phrase is complete, and
+  * `shared` stops the deletion at the front the current phrase and the next
+- * share — which, for the four hero phrases, is exactly "We can fix every".
++ * share — which the configured phrases may not have at all.
+  * ───────────────────────────────────────────────────────────────────── */
+ 
+ /** Base milliseconds per keystroke, plus up to this much again at random. */
+-var KEY_MS = 58
+-var KEY_JITTER = 60
+-var WORD_PAUSE = 95
++var KEY_MS = 96
++var KEY_JITTER = 52
++var WORD_PAUSE = 140
+ var ENDING_PAUSE = 70
+ /** How often a keystroke catches, and for how long. */
+ var HESITATE_ODDS = 0.07
+ var HESITATE_MS = 140
+ var DELETE_MS = 27
+-var HOLD_MS = 2100
+-var TURN_MS = 420
++/** How long a finished phrase stays on screen before it deletes itself. */
++var HOLD_MS = 3800
++var TURN_MS = 520
++/**
++ * The average per-glyph delay the loop settles on. The `once` sheet is a single
++ * CSS animation over the whole phrase, so it reads this same figure rather than
++ * carrying its own copy of the rhythm.
++ */
++var AVG_KEY_MS = Math.round(KEY_MS + KEY_JITTER / 2)
+ 
+ /**
+  * Run the rotation on one headline span.
+@@ -724,6 +730,20 @@ function mountTyper(el, phrases, reduced) {
+     return i
+   }
+ 
++  /**
++   * Slice by UTF-16 offset without splitting a surrogate pair. Stopping between
++   * an emoji's two halves would render U+FFFD for one step, so a phrase carrying
++   * an emoji shows that whole glyph one step early instead of a broken one.
++   */
++  function sliceSafe(text, count) {
++    var end = count
++    if (end > 0 && end < text.length) {
++      var last = text.charCodeAt(end - 1)
++      if (last >= 0xd800 && last <= 0xdbff) end += 1
++    }
++    return text.slice(0, end)
++  }
++
+   var index = Math.floor(Math.random() * phrases.length)
+   var length = 0
+   var deleting = false
+@@ -741,7 +761,7 @@ function mountTyper(el, phrases, reduced) {
+ 
+   function step() {
+     var phrase = phrases[index]
+-    el.textContent = phrase.slice(0, length)
++    el.textContent = sliceSafe(phrase, length)
+ 
+     var next = wait()
+     var onward = (index + 1) % phrases.length
+@@ -1025,7 +1045,7 @@ export function applyFeature(host) {
+         h('div', { className: 'omapixel-line' },
+           h('span', { className: 'omapixel-legend' }, 'Headline:'),
+           h('span', { className: 'omapixel-note' },
+-            '"We can fix every..." headline rotation on New Session page: loop forever or just play once.')),
++            'Headline rotation on New Session page: loop forever or just play once.')),
+         h('div', { className: 'omapixel-row' },
+           TYPE_MODES.map(function (mode) {
+             return h('button', {
