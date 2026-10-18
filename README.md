@@ -60,7 +60,8 @@
 
 ### 插件清单
 
-`dsh/profiles/web/package.json` 里的 8 个 bundle，版本由 `pnpm-lock.yaml` 锁定：
+`dsh/profiles/web/package.json` 在官方 `dsh-base` / `dsh-web-app` 之外新增的 8 个 bundle，
+版本由 `pnpm-lock.yaml` 锁定：
 
 | Bundle | 版本 | 说明 |
 |---|---|---|
