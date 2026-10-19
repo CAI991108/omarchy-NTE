@@ -5,8 +5,13 @@
 
 [![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?logo=arch-linux&logoColor=white)](https://archlinux.org/)
 [![Hyprland](https://img.shields.io/badge/Hyprland-Wayland-58E1FF?logo=hyprland&logoColor=white)](https://hypr.land/)
-[![Omarchy](https://img.shields.io/badge/Omarchy-3.8.2-blue)](https://omarchy.org/)
+[![Omarchy](https://img.shields.io/badge/Omarchy-3.8.2-blue?logo=omarchy&logoColor=white)](https://omarchy.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
+
+[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.2-4D6BFE?logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+[![Catppuccin](https://img.shields.io/badge/Catppuccin-Mocha-cba6f7?labelColor=1e1e2e)](https://catppuccin.com/)
+[![fcitx5](https://img.shields.io/badge/fcitx5-5.1.19-2E7D9A)](https://fcitx-im.org/)
+[![Neovim](https://img.shields.io/badge/Neovim-LazyVim-57A143?logo=neovim&logoColor=white)](https://www.lazyvim.org/)
 
 <p align="center">
   <img src="assets/hero.webp" alt="大肥鱼 おまかせ —— Omarchy + DSH 配置美化" width="100%">
