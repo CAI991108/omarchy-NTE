@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
 
 <p align="center">
-  <img src="assets/desktop.webp" alt="Omarchy 桌面预览" width="100%">
+  <img src="assets/hero.webp" alt="大肥鱼 おまかせ —— Omarchy + DSH 配置美化" width="100%">
 </p>
 
 ---
@@ -33,7 +33,7 @@
 - `dsh/` 内含 `web` profile：插件（像素封面、推理滑轨）加六个第三方 bundle。
 
 <p align="center">
-  <img src="assets/dsh/hero.webp" alt="DSH 新会话：像素星野、蓝色大肥鱼、哦鲸鲸徽章" width="100%">
+  <img src="assets/dsh/cover-a.webp" alt="DSH 新会话：像素星野、蓝色大肥鱼、哦鲸鲸徽章" width="100%">
 </p>
 
 >「蓝色大肥鱼」、像素星野、「哦鲸鲸…」、神鲸四档推理滑轨
