@@ -6,7 +6,6 @@ settings:
 
 patchedDependencies:
   omaseek-pixel@0.2.1: c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91
-  omaseek-themes@0.3.1: db8c5bf490997ef5b633520f460e6d7f1e19f989f59680a156f6669e284ac080
 
 importers:
 
@@ -34,8 +33,8 @@ importers:
         specifier: ^0.2.1
         version: 0.2.1(patch_hash=c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91)
       omaseek-themes:
-        specifier: ^0.3.1
-        version: 0.3.1(patch_hash=db8c5bf490997ef5b633520f460e6d7f1e19f989f59680a156f6669e284ac080)
+        specifier: ^0.3.2
+        version: 0.3.2
 
 packages:
 
@@ -593,8 +592,8 @@ packages:
   omaseek-pixel@0.2.1:
     resolution: {integrity: sha512-oloohss3Sq3+08SZ7agAwi78tUY/oK7mZNaEWG06P0FM146pD3gFQ1jxAvNPuYrW/hxIaYuDVsOBnDygLLPbZA==}
 
-  omaseek-themes@0.3.1:
-    resolution: {integrity: sha512-+sHjgMQlopUO9k6GLJoJhttyDMKS/gUkID2EECzrdAtigzdoetvfMGFSvb6RoNZcCX8WO0RfuQessvjRkJ8Rgg==}
+  omaseek-themes@0.3.2:
+    resolution: {integrity: sha512-ufUvV566KTg2ejkgFfsVZM5WzoPo/LdL/PU1r9LRKznE0s7o6hCrifM6FEScFszkaudg6pXsnTvhP1G1Jo0lBw==}
 
   package-manager-detector@1.9.0:
     resolution: {integrity: sha512-zAMfbta9nPA8AKkA4WdmNAT8R8s6Dk0/xwPsqNnRidMFcLo1YkLuPDTgs2f64XdzS8vbLNnoJ+uUIkgbz7oRHA==}
@@ -1432,7 +1431,7 @@ snapshots:
 
   omaseek-pixel@0.2.1(patch_hash=c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91): {}
 
-  omaseek-themes@0.3.1(patch_hash=db8c5bf490997ef5b633520f460e6d7f1e19f989f59680a156f6669e284ac080): {}
+  omaseek-themes@0.3.2: {}
 
   package-manager-detector@1.9.0: {}
 
