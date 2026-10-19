@@ -1,6 +1,7 @@
 # omarchy-NTE
 
-**Catppuccin 主题 + 异环娜娜莉壁纸的 Omarchy 桌面配置 —— 主题、输入法、窗口管理器、终端，外加 DSH 皮肤，配一键安装脚本。**
+**Catppuccin 主题 + 异环娜娜莉壁纸的 Omarchy 桌面配置**
+> —— themes、输入法、窗口管理器、终端，外加 DSH 皮肤，配一键安装脚本。
 
 [![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?logo=arch-linux&logoColor=white)](https://archlinux.org/)
 [![Hyprland](https://img.shields.io/badge/Hyprland-Wayland-58E1FF?logo=hyprland&logoColor=white)](https://hypr.land/)
@@ -52,7 +53,11 @@
 | **右侧栏与 skills** | `dsh-better-sidebar`、`dsh-mattpocock-skills-deck` | 文件树、编辑器、任务、侧边对话收进右栏；ISSUE 与 map 管理 |
 
 <p align="center">
+  <img src="assets/dsh/fish.webp" alt="像素大肥鱼头像" width="53">
+  &nbsp;&nbsp;&nbsp;
   <img src="assets/dsh/brand.webp" alt="蓝色大肥鱼品牌标识与版本号" width="242">
+  &nbsp;&nbsp;&nbsp;
+  <img src="assets/dsh/badge.webp" alt="哦鲸鲸… 预览徽章" width="150">
 </p>
 
 <p align="center">
