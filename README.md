@@ -52,13 +52,27 @@
 | **右侧栏与 skills** | `dsh-better-sidebar`、`dsh-mattpocock-skills-deck` | 文件树、编辑器、任务、侧边对话收进右栏；ISSUE 与 map 管理 |
 
 <p align="center">
-  <img src="assets/dsh/brand.webp" alt="侧栏：蓝色大肥鱼品牌、新会话、插件、自动化任务" width="200">
-  &nbsp;&nbsp;&nbsp;
+  <img src="assets/dsh/brand.webp" alt="蓝色大肥鱼品牌标识与版本号" width="242">
+</p>
+
+<p align="center">
   <img src="assets/dsh/slider.webp" alt="四档推理滑轨：模型卡片里的模型与推理等级" width="350">
 </p>
 
 <p align="center">
   <img src="assets/dsh/typing.webp" alt="三句轮播的打字机标题" width="620">
+</p>
+
+<p align="center">
+  <img src="assets/dsh/themes.webp" alt="OmaThemes：22 套 Omarchy 配色" width="720">
+</p>
+
+<p align="center">
+  <img src="assets/dsh/cards.webp" alt="侧栏音乐卡片与今日费用" width="760">
+</p>
+
+<p align="center">
+  <img src="assets/dsh/right-sidebar.webp" alt="右侧栏：文件、Git、终端、任务、侧边对话、MattSkills" width="100%">
 </p>
 
 ### 复现
