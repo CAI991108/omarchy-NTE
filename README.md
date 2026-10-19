@@ -1,6 +1,6 @@
 # omarchy-NTE
 
-**Catppuccin 主题 + 异环娜娜莉壁纸的 Omarchy 桌面配置 —— 主题、输入法、窗口管理器、终端，外加一套 DSH（AI 客户端）像素皮肤，配一键安装脚本。**
+**Catppuccin 主题 + 异环娜娜莉壁纸的 Omarchy 桌面配置 —— 主题、输入法、窗口管理器、终端，外加 DSH 皮肤，配一键安装脚本。**
 
 [![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?logo=arch-linux&logoColor=white)](https://archlinux.org/)
 [![Hyprland](https://img.shields.io/badge/Hyprland-Wayland-58E1FF?logo=hyprland&logoColor=white)](https://hypr.land/)
