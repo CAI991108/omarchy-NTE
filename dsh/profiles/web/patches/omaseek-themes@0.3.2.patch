@@ -1,0 +1,53 @@
+diff --git a/lib/client.js b/lib/client.js
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1462,6 +1462,7 @@
+     if (!registered(wanted)) return
+     try {
+       theme.setTheme(wanted)
++      painted = true
+     } catch (error) {
+       state.error = String((error && error.message) || error)
+       notify()
+@@ -1491,6 +1492,16 @@
+    */
+   var repairPending = false
+   var stopped = false
++
++  /**
++   * Whether this Package has put a palette in force on this page yet.
++   *
++   * Before the first paint there is no reader interaction to attribute a
++   * preference change to: the settings document is still loading, and the
++   * theme service reports its `system` default before adopting the durable
++   * `dark`/`light`. A preference arriving in that window is that adoption.
++   */
++  var painted = false
+   function repair() {
+     if (repairPending || stopped) return
+     repairPending = true
+@@ -1644,11 +1655,19 @@
+       // the harness palette, System hands both schemes back to the desktop —
+       // or the row would set a preference this picker then paints over.
+       if (PREFERENCES.indexOf(snapshot.preference) >= 0 && snapshot.preference !== mode) {
+-        if (snapshot.preference === 'system') {
+-          delete choices.light
+-          delete choices.dark
+-        } else {
+-          choices[snapshot.preference] = HARNESS
++        // Before the first paint the settings document is still loading: the
++        // theme service reports its `system` default, then adopts the durable
++        // `light`/`dark`. A slot written in that window is that adoption, not a
++        // press on the Appearance row, and pinning `base` there would forget
++        // the palette the reader chose. Only trust a press after this Package
++        // has put a palette in force once (`painted`).
++        if (painted) {
++          if (snapshot.preference === 'system') {
++            delete choices.light
++            delete choices.dark
++          } else {
++            choices[snapshot.preference] = HARNESS
++          }
+         }
+         rememberMode(snapshot.preference)
+       }

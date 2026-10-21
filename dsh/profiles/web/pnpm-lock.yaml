@@ -6,6 +6,7 @@ settings:
 
 patchedDependencies:
   omaseek-pixel@0.2.1: c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91
+  omaseek-themes@0.3.2: 3f88e770c61a3de53edccf0cdca45a1470ec93651dde489212e657aee5a56a00
 
 importers:
 
@@ -34,7 +35,7 @@ importers:
         version: 0.2.1(patch_hash=c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91)
       omaseek-themes:
         specifier: ^0.3.2
-        version: 0.3.2
+        version: 0.3.2(patch_hash=3f88e770c61a3de53edccf0cdca45a1470ec93651dde489212e657aee5a56a00)
 
 packages:
 
@@ -1431,7 +1432,7 @@ snapshots:
 
   omaseek-pixel@0.2.1(patch_hash=c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91): {}
 
-  omaseek-themes@0.3.2: {}
+  omaseek-themes@0.3.2(patch_hash=3f88e770c61a3de53edccf0cdca45a1470ec93651dde489212e657aee5a56a00): {}
 
   package-manager-detector@1.9.0: {}
 

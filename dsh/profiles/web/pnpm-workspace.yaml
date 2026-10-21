@@ -5,6 +5,7 @@ nodeLinker: hoisted
 autoInstallPeers: false
 patchedDependencies:
   omaseek-pixel@0.2.1: patches/omaseek-pixel@0.2.1.patch
+  omaseek-themes@0.3.2: patches/omaseek-themes@0.3.2.patch
 minimumReleaseAgeExclude:
   - dsh-cost-meter@1.9.3
   - omaseek-pixel@0.2.1
