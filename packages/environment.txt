@@ -12,3 +12,6 @@ fcitx5: 5.1.19
 生成时间: 2026-10-15T11:29:54+08:00
 
 # 硬件：Lenovo ThinkPad T460（型号本身没有隐私，但主机名含此信息）
+
+# 包清单例外（本机有、但按决定不纳入 pacman-explicit.txt）：
+#   usbmuxd —— 本机显式安装，桌面配置不需要（upower 的 optional 依赖，用于 iOS 设备访问）。
