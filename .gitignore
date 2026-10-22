@@ -41,6 +41,11 @@ config/**/.git-credentials
 **/*.ppk
 **/known_hosts*
 
+# ── 凭据 / 身份补充（安全网：防止将来 `git add -A` 误伤）────────
+# pulse/cookie 是 PulseAudio 的共享密钥，frida/ 是设备身份文件。
+config/pulse/
+config/frida/
+
 # ── 浏览器 / 编辑器 profile（体积巨大且含会话与登录态）─────────
 config/chromium/
 config/BraveSoftware/
