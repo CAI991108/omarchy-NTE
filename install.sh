@@ -245,7 +245,7 @@ while IFS= read -r -d '' src; do
   target="$DEST_CONFIG/$rel"
   new_dest="$(rewrite_home "$(readlink "$src")")"
 
-  mkdir -p "$(dirname "$target")"
+  $DRY_RUN || mkdir -p "$(dirname "$target")"
 
   if [[ -L $target && "$(readlink "$target")" == "$new_dest" ]]; then
     dim "      已是正确链接: $rel"
@@ -304,7 +304,7 @@ if [[ -d $SRC_DSH ]]; then
       *)              continue ;;
     esac
 
-    mkdir -p "$(dirname "$target")"
+    $DRY_RUN || mkdir -p "$(dirname "$target")"
     if [[ -f $target ]] && cmp -s "$src" "$target"; then
       ((dsh_skipped++)) || true
       continue
