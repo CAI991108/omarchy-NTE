@@ -50,6 +50,17 @@ readonly CAPTURED_HOME="${CAPTURED_HOME:-$HOME}"
 DRY_RUN=false
 (( $# > 0 )) && [[ $1 == "--dry-run" ]] && DRY_RUN=true
 
+# ── repo → deploy path mapping ────────────────────────────────────────────────
+# A few captured files cannot keep their on-disk name: git and shell scripts are
+# happier without spaces, but Omarchy expects the original name. Keys and values
+# are paths relative to config/.
+declare -A PATH_OVERRIDES=(
+  # The active catppuccin wallpaper has a space in its name. The repo stores it
+  # with a hyphen so it stays shell-friendly, but ~/.config/omarchy/current/
+  # background points at the spaced name, so deploy it back with the space.
+  ["omarchy/backgrounds/catppuccin/nanally-wallpaper.jpeg"]="omarchy/backgrounds/catppuccin/nanally wallpaper.jpeg"
+)
+
 # ── output helpers ────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
   C_RESET=$'\e[0m'; C_DIM=$'\e[2m'; C_GREEN=$'\e[32m'
@@ -150,9 +161,12 @@ backup_file() {
 }
 
 deploy_file() {
-  local src="$1" rel="${1#"$SRC_CONFIG"/}" target="$DEST_CONFIG/${1#"$SRC_CONFIG"/}"
+  local src="$1" rel="${1#"$SRC_CONFIG"/}"
+  # PATH_OVERRIDES lets a few files deploy under a different name than they are
+  # stored under in git (see the wallpaper entry at the top of this script).
+  local target="$DEST_CONFIG/${PATH_OVERRIDES[$rel]:-$rel}"
 
-  mkdir -p "$(dirname "$target")"
+  $DRY_RUN || mkdir -p "$(dirname "$target")"
 
   # Unchanged? Then leave it alone (idempotent re-runs).
   if [[ -f $target && ! -L $target ]] && cmp -s "$src" "$target"; then
@@ -168,17 +182,23 @@ deploy_file() {
     run chmod +x "$target"
   fi
 
-  # NOTE: file *contents* are deployed verbatim. This repo's configs were
-  # captured without hard-coded home paths (the one `SUPER+D` binding that had
-  # `/home/<user>/...` was deliberately removed), so there is nothing to rewrite.
-  # If you fork this repo and your configs do contain absolute home paths, prefer
-  # replacing them with $HOME or ~ in the config itself rather than patching here.
-  # Symlink *targets* still reference the capture-time home and ARE rewritten —
-  # see rewrite_home() and step 2.
+  # NOTE: file *contents* are deployed verbatim. This repo's configs are captured
+  # without hard-coded home paths: the `SUPER+D` binding that opens the DSH web UI
+  # is stored as `~/.local/bin/dsh-web-open`, not `/home/<user>/...`, so it works
+  # for any username. If you fork this repo and your configs do contain absolute
+  # home paths, prefer replacing them with $HOME or ~ in the config itself rather
+  # than patching here. Symlink *targets* still reference the capture-time home and
+  # ARE rewritten — see rewrite_home() and step 2.
 
   ((deployed++)) || true
   if $DRY_RUN; then
-    printf '%s    would deploy:%s %s\n' "$C_DIM" "$C_RESET" "$rel"
+    # Show the deployed name when PATH_OVERRIDES renames the file, e.g. the
+    # hyphenated wallpaper landing under its original spaced filename.
+    local shown="$rel" deployed_rel="${target#"$DEST_CONFIG"/}"
+    if [[ $rel != "$deployed_rel" ]]; then
+      shown="$rel  →  $deployed_rel"
+    fi
+    printf '%s    would deploy:%s %s\n' "$C_DIM" "$C_RESET" "$shown"
   fi
 }
 
@@ -191,6 +211,27 @@ while IFS= read -r -d '' src; do
 done < <(find "$SRC_CONFIG" -type f -print0 | sort -z)
 
 ok "已部署 $deployed 个文件，$skipped 个已是最新"
+
+# ── 1b. wallpaper sanity check ────────────────────────────────────────────────
+# Omarchy regenerates omarchy/current/background on every theme change and points
+# it at a file under omarchy/backgrounds/<theme>/. That filename contains a space,
+# which is why the repo stores a hyphenated copy and PATH_OVERRIDES deploys it back
+# under the spaced name. Verify the link actually resolves instead of trusting it.
+step "1b. 壁纸链接检查"
+bg_link="$DEST_CONFIG/omarchy/current/background"
+if [[ -L $bg_link ]]; then
+  bg_target="$(readlink "$bg_link")"
+  if [[ -e $bg_target ]]; then
+    ok "壁纸链接有效: ${bg_target/#$HOME/\~}"
+  else
+    warn "壁纸链接指向的文件不存在: $bg_target"
+    info "  修复：omarchy theme set \"\$(omarchy theme current)\""
+  fi
+elif [[ -e $bg_link ]]; then
+  dim "  background 不是符号链接，跳过检查"
+else
+  dim "  omarchy/current/background 尚不存在（首次换主题后 Omarchy 会生成）"
+fi
 
 # ── 2. rebuild the theme-following symlinks ───────────────────────────────────
 step "2. 重建主题跟随符号链接"
