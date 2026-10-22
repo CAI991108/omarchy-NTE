@@ -9,6 +9,19 @@ Deployment is a **copy**, not a symlink: Omarchy's `omarchy-refresh-config` runs
 overwrite files inside the repo. `install.sh` copies instead, backs up first, and is
 idempotent.
 
+## Capture convention: no absolute home paths
+
+When capturing a config file, store home-relative paths as `~` (or `$HOME`), never
+`/home/<user>/...`. `install.sh` deploys file *contents* verbatim — only symlink
+*targets* are rewritten — so a hard-coded home path would break for any other
+username. Example: the `SUPER+D` DSH binding is stored as
+`~/.local/bin/dsh-web-open`; tilde expansion in Hyprland's `exec` is verified.
+
+One deliberate deviation follows from Omarchy's own template: `config/git/config`
+omits the `[user]` and `[credential]` sections (real name, school email, gh helper)
+because the repo is public. Deploying it over a machine that already has them will
+strip that identity — set it again after running `install.sh` on such a machine.
+
 ## Agent skills
 
 ### Issue tracker
