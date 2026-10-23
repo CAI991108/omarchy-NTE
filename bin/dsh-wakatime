@@ -1,0 +1,545 @@
+#!/usr/bin/env python3
+"""dsh-wakatime — 把 DeepSeek Harness (DSH) 的会话活动同步成 WakaTime 心跳。
+
+数据源
+    ~/.dsh/sessions/<workspace>/session-<uuid>/session.v4.jsonl.zstd
+    每行一个 JSON 事件；其中 tool/call 带 {name, arguments(JSON 字符串), time(ms)}：
+      write / edit        -> is_write = true
+      read / read_image   -> is_write = false
+
+投递
+    直接调用本机 ~/.wakatime/wakatime-cli，复用 ~/.wakatime.cfg 里的 api_key，
+    因此和 nvim / vscode 共用同一套离线队列、失败重试与限流，不需要第二份凭证。
+
+用法
+    dsh-wakatime sync              增量同步（默认只处理今天的会话）
+    dsh-wakatime sync --days 7     回填最近 7 天
+    dsh-wakatime sync --dry-run    只打印将要发送的心跳，不调用 CLI
+    dsh-wakatime status            查看已处理进度
+    dsh-wakatime doctor            换机器后自检依赖与配置
+    dsh-wakatime reset             清空进度（下次会重发，慎用）
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path.home()
+DSH_HOME = Path(os.environ.get("DSH_HOME", HOME / ".dsh"))
+SESSIONS_DIR = DSH_HOME / "sessions"
+WAKATIME_CLI = Path(os.environ.get("WAKATIME_CLI", HOME / ".wakatime" / "wakatime-cli"))
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local" / "state")) / "dsh-wakatime"
+STATE_FILE = STATE_DIR / "state.json"
+LOCK_FILE = STATE_DIR / "lock"
+
+SESSION_FILE = "session.v4.jsonl.zstd"
+
+# WakaTime 靠 User-Agent 识别“编辑器”。默认沿用 nvim 的前缀，归到 Neovim；
+# 想让它单独成为一个条目（实测会被识别为 "Deepseek"），把 DSH_WAKATIME_UA 设为
+# "deepseek-harness/0.1.0" 即可（systemd 里改 Environment= 或加 EnvironmentFile=）。
+USER_AGENT = os.environ.get("DSH_WAKATIME_UA", "neovim/0.12.2 dsh-wakatime/0.1.0")
+
+# 同一文件 120s 内只记一次，和编辑器插件的行为一致。
+THROTTLE_MS = 120_000
+BATCH_SIZE = 100
+
+# 真正的项目文件才算；系统目录、临时目录与 DSH 自己的状态不进账。
+DENY_PREFIXES = [
+    "/tmp/", "/var/tmp/", "/proc/", "/sys/", "/dev/", "/run/",
+    "/usr/", "/etc/", "/var/",
+    str(DSH_HOME) + "/",
+    str(HOME / ".cache") + "/",
+    str(STATE_DIR) + "/",
+]
+
+# 工具名 -> 是否算“写入”
+COMMAND_TOOLS = {"bash", "run_code"}
+
+FILE_TOOLS = {
+    "write": True,
+    "edit": True,
+    "read": False,
+    "read_image": False,
+}
+
+
+def log(msg: str, quiet: bool = False) -> None:
+    if not quiet:
+        print(msg, flush=True)
+
+
+def load_state() -> dict:
+    try:
+        with STATE_FILE.open() as fh:
+            state = json.load(fh)
+    except (OSError, ValueError):
+        state = {}
+    state.setdefault("version", 1)
+    state.setdefault("sessions", {})
+    state.setdefault("last_emitted", {})
+    return state
+
+
+def save_state(state: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = STATE_FILE.with_suffix(".tmp")
+    with tmp.open("w") as fh:
+        json.dump(state, fh, indent=2, sort_keys=True)
+    os.replace(tmp, STATE_FILE)
+
+
+def session_files() -> list[Path]:
+    if not SESSIONS_DIR.is_dir():
+        return []
+    # DSH 的会话目录不总是 session- 前缀（有 8c8ec058-... 这种裸 UUID），
+    # 所以只按目录层级匹配，不限制名字。
+    return sorted(SESSIONS_DIR.glob(f"*/*/{SESSION_FILE}"))
+
+
+def iter_events(path: Path):
+    """逐行解压读取；遇到半行（会话正在写入）就停下，不推进进度。"""
+    proc = subprocess.Popen(
+        ["zstd", "-dc", str(path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except ValueError:
+                return
+    finally:
+        if proc.stdout:
+            proc.stdout.close()
+        proc.wait()
+
+
+def within_denylist(path: str) -> bool:
+    return any(path.startswith(prefix) for prefix in DENY_PREFIXES)
+
+
+def project_for(hb: dict) -> str | None:
+    """先认 git 仓库名；没有 git 就用会话 cwd 的目录名兜底（仅限 cwd 内的文件）。"""
+    project = git_project(Path(hb["entity"]))
+    if project:
+        return project
+    cwd = hb.get("cwd")
+    if not cwd:
+        return None
+    entity = os.path.normpath(hb["entity"])
+    cwd = os.path.normpath(cwd)
+    if entity == cwd or entity.startswith(cwd + os.sep):
+        return os.path.basename(cwd) or None
+    return None
+
+
+def git_project(path: Path) -> str | None:
+    current = path if path.is_dir() else path.parent
+    for parent in [current, *current.parents]:
+        if (parent / ".git").exists():
+            return parent.name
+    return None
+
+
+def entity_from_event(ev: dict, cwd: str | None) -> dict | None:
+    if ev.get("type") != "tool/call":
+        return None
+    data = ev.get("data") or {}
+    tool = data.get("name")
+    if tool not in FILE_TOOLS:
+        return None
+    try:
+        args = json.loads(data.get("arguments") or "{}")
+    except ValueError:
+        return None
+    raw = args.get("file_path")
+    if not isinstance(raw, str) or not raw:
+        return None
+    expanded = os.path.expanduser(raw)
+    if not os.path.isabs(expanded):
+        if not cwd:
+            return None
+        expanded = os.path.join(cwd, expanded)
+    entity = os.path.normpath(expanded)
+    if within_denylist(entity + "/" if os.path.isdir(entity) else entity):
+        return None
+    ts_ms = ev.get("time")
+    if not isinstance(ts_ms, (int, float)):
+        return None
+    return {
+        "entity": entity,
+        "time": round(ts_ms / 1000.0, 6),
+        "ms": ts_ms,
+        "is_write": FILE_TOOLS[tool],
+        "session": str(ev.get("_session", "")),
+        "seq": ev.get("seq", -1),
+        "cwd": cwd,
+    }
+
+
+def collect(since_ms: int, state: dict, include_commands: bool = False) -> tuple[list[dict], dict]:
+    """返回 (待发送心跳, 每个会话的新进度)。"""
+    candidates: list[dict] = []
+    progressed: dict[str, int] = {}
+    files = session_files()
+
+    for path in files:
+        try:
+            mtime_ms = path.stat().st_mtime * 1000
+        except OSError:
+            continue
+        if mtime_ms < since_ms:
+            continue
+
+        key = str(path)
+        prev_seq = (state["sessions"].get(key) or {}).get("seq", -1)
+        cwd = None
+        max_seq = prev_seq
+
+        for ev in iter_events(path):
+            etype = ev.get("type")
+            if etype == "session":
+                cwd = ev.get("cwd")
+                continue
+            seq = ev.get("seq")
+            if not isinstance(seq, int):
+                continue
+            if seq <= prev_seq:
+                continue
+            ev["_session"] = key
+            ev_time = ev.get("time")
+            if isinstance(ev_time, (int, float)) and ev_time >= since_ms:
+                hb = entity_from_event(ev, cwd)
+                if hb:
+                    candidates.append(hb)
+                elif include_commands and cwd:
+                    # 纯执行类活动（bash / run_code）：以会话目录为锚点，2 分钟一条。
+                    d = ev.get("data") or {}
+                    if d.get("name") in COMMAND_TOOLS:
+                        anchor = os.path.normpath(os.path.expanduser(cwd))
+                        # 只给真正的项目目录做锚点；工作区根目录（没有 git）不记。
+                        if not within_denylist(anchor + "/") and git_project(Path(anchor)):
+                            candidates.append({
+                                "entity": anchor,
+                                "time": round(ev_time / 1000.0, 6),
+                                "ms": ev_time,
+                                "is_write": False,
+                                "is_dir": True,
+                                "cwd": cwd,
+                                "session": key,
+                                "seq": ev.get("seq", -1),
+                            })
+            max_seq = max(max_seq, seq)
+
+        if max_seq > prev_seq:
+            progressed[key] = max_seq
+
+    return candidates, progressed
+
+
+def throttle(candidates: list[dict], last_emitted: dict) -> list[dict]:
+    candidates.sort(key=lambda h: (h["ms"], h["session"], h["seq"]))
+    kept: list[dict] = []
+    local_last: dict[str, float] = {}
+    last_file: dict[str, float] = {}
+    for hb in candidates:
+        entity = hb["entity"]
+        t_ms = hb["ms"]
+        stored = last_emitted.get(entity)
+        local = local_last.get(entity)
+        if stored is not None and t_ms < stored:
+            # 回填更早的事件时，不要拿“未来”的记录去节流，只看本次已发的。
+            previous = local
+        else:
+            previous = max((x for x in (stored, local) if x is not None), default=None)
+        if previous is not None and abs(t_ms - previous) < THROTTLE_MS:
+            continue
+        if hb.get("is_dir"):
+            # 会话里刚有真实文件活动时，不再额外插目录锚点，避免噪音。
+            recent = last_file.get(hb["session"])
+            if recent is not None and abs(t_ms - recent) < THROTTLE_MS:
+                continue
+        else:
+            last_file[hb["session"]] = t_ms
+        kept.append(hb)
+        local_last[entity] = t_ms
+        last_emitted[entity] = max(previous or 0, t_ms)
+    return kept
+
+
+def send_batch(batch: list[dict], category: str) -> int:
+    head, rest = batch[0], batch[1:]
+    cmd = [
+        str(WAKATIME_CLI),
+        "--entity", head["entity"],
+        "--time", f'{head["time"]:.6f}',
+        "--plugin", USER_AGENT,
+        "--category", category,
+        # 关掉 120s 同步限流：限流会把整批压进离线队列，看起来“发送成功”但后台没有。
+        "--heartbeat-rate-limit-seconds", "0",
+    ]
+    project = project_for(head)
+    if head.get("is_dir"):
+        # 目录不是普通文件，显式标记为“未保存实体”，并强制项目名。
+        cmd += ["--is-unsaved-entity", "--project", project or "Unknown"]
+    elif project:
+        cmd += ["--alternate-project", project]
+    if head["is_write"]:
+        cmd.append("--write")
+    if rest:
+        cmd.append("--extra-heartbeats")
+
+    payload = ""
+    if rest:
+        extras = []
+        for hb in rest:
+            extra = {
+                "entity": hb["entity"],
+                "time": hb["time"],
+                "is_write": hb["is_write"],
+                "category": category,
+            }
+            if hb.get("is_dir"):
+                extra["is_unsaved_entity"] = True
+            project = project_for(hb)
+            if project:
+                extra["project"] = project
+            extras.append(extra)
+        payload = json.dumps(extras)
+    proc = subprocess.run(
+        cmd,
+        input=payload,
+        text=True,
+        capture_output=True,
+        timeout=300,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(
+            f"wakatime-cli failed rc={proc.returncode}\n{proc.stdout}\n{proc.stderr}\n"
+        )
+    return proc.returncode
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    # 明确不使用 ai coding：DSH 的记账按普通 coding 计。
+    if args.category.strip().lower() == "ai coding":
+        sys.stderr.write('已禁用 "ai coding" 分类，请使用默认的 coding。\n')
+        return 2
+    if not WAKATIME_CLI.exists():
+        sys.stderr.write(f"找不到 wakatime-cli: {WAKATIME_CLI}\n")
+        return 1
+    if shutil.which("zstd") is None:
+        sys.stderr.write("找不到 zstd，无法读取会话日志\n")
+        return 1
+
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    lock = LOCK_FILE.open("w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        log("另一个 dsh-wakatime 正在运行，跳过", args.quiet)
+        return 0
+
+    try:
+        if args.since:
+            since_ms = int(time.mktime(time.strptime(args.since, "%Y-%m-%d")) * 1000)
+        elif args.days > 0:
+            since_ms = int((time.time() - args.days * 86400) * 1000)
+        else:
+            since_ms = 0
+
+        state = load_state()
+        candidates, progressed = collect(since_ms, state, args.include_commands)
+        heartbeats = throttle(candidates, state["last_emitted"])
+
+        log(
+            f"扫描到 {len(candidates)} 条文件事件，节流后 {len(heartbeats)} 条心跳"
+            f"（{len(progressed)} 个会话有新内容）",
+            args.quiet,
+        )
+
+        if args.dry_run:
+            for hb in heartbeats:
+                flag = "write" if hb["is_write"] else "read "
+                stamp = time.strftime("%m-%d %H:%M:%S", time.localtime(hb["time"]))
+                print(f"  {stamp}  {flag}  {hb['entity']}")
+            return 0
+
+        if not heartbeats:
+            # 事件全部落在 120s 节流窗口内：也算“已处理”，否则每轮都会重扫同一批。
+            for key, seq in progressed.items():
+                state["sessions"][key] = {"seq": seq, "synced_at": int(time.time())}
+            save_state(state)
+            return 0
+
+        failures = 0
+        for start in range(0, len(heartbeats), BATCH_SIZE):
+            rc = send_batch(heartbeats[start : start + BATCH_SIZE], args.category)
+            if rc != 0:
+                failures += 1
+                break
+
+        if failures:
+            return 1
+
+        # 兜底：把之前被限流/断网压在队列里的心跳（含其它编辑器留下的）一次冲刷掉。
+        flush = subprocess.run(
+            [str(WAKATIME_CLI), "--sync-offline-activity", "0"],
+            text=True,
+            capture_output=True,
+            timeout=300,
+        )
+        if flush.returncode != 0:
+            sys.stderr.write(f"offline flush failed rc={flush.returncode}\n{flush.stderr}\n")
+
+        for key, seq in progressed.items():
+            state["sessions"][key] = {"seq": seq, "synced_at": int(time.time())}
+        save_state(state)
+        log(f"已投递 {len(heartbeats)} 条心跳", args.quiet)
+        return 0
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
+
+
+def cmd_doctor(_: argparse.Namespace) -> int:
+    """换机器后自检：依赖、CLI、密钥、会话格式、状态目录。"""
+    import configparser
+
+    passed = True
+
+    def check(cond: bool, label: str, hint: str = "") -> None:
+        nonlocal passed
+        print(f"  {'✓' if cond else '!'} {label}" + ("" if cond or not hint else f"\n      → {hint}"))
+        if not cond:
+            passed = False
+
+    print("dsh-wakatime doctor")
+    check(sys.version_info >= (3, 9), f"Python {sys.version_info.major}.{sys.version_info.minor}")
+    check(shutil.which("zstd") is not None, "zstd 可用", "pacman -S zstd")
+    check(SESSIONS_DIR.is_dir(), f"DSH 会话目录 {SESSIONS_DIR}", "先安装并至少启动一次 DSH")
+
+    check(
+        WAKATIME_CLI.is_file() and os.access(WAKATIME_CLI, os.X_OK),
+        f"wakatime-cli {WAKATIME_CLI}",
+        "装任意 WakaTime 编辑器插件会自动下载；或从 github.com/wakatime/wakatime-cli/releases 取对应平台二进制放这里",
+    )
+    if WAKATIME_CLI.is_file():
+        try:
+            proc = subprocess.run([str(WAKATIME_CLI), "--version"], capture_output=True, text=True, timeout=15)
+            check(proc.returncode == 0, f"CLI 可执行（{(proc.stdout or '').strip() or 'no version'}）")
+        except Exception as exc:  # noqa: BLE001
+            check(False, "CLI 可执行", str(exc))
+
+    cfg = HOME / ".wakatime.cfg"
+    check(cfg.is_file(), f"配置文件 {cfg}", "运行一次 WakaTime 插件并填 API key，会生成该文件")
+    if cfg.is_file():
+        parser = configparser.ConfigParser()
+        parser.read(cfg)
+        key = parser.get("settings", "api_key", fallback="") or parser.get("settings", "apikey", fallback="")
+        check(bool(key), "api_key 已配置", ':WakaTimeApiKey 或 wakatime-cli --config-write api_key "..."')
+
+    files = session_files()
+    if files:
+        newest = max(files, key=lambda p: p.stat().st_mtime)
+        try:
+            head = next(iter_events(newest))
+            check(
+                head.get("type") == "session" and head.get("version") == 4,
+                f"会话格式 v4（{newest.parent.name}）",
+                "DSH 升级后日志格式可能变化，需要更新解析逻辑",
+            )
+        except Exception as exc:  # noqa: BLE001
+            check(False, "会话格式可读", str(exc))
+    else:
+        check(False, "找到会话日志", "跑一次 DSH 会话再检查")
+
+    target = STATE_DIR if STATE_DIR.exists() else HOME
+    check(os.access(target, os.W_OK), f"状态目录可写 {STATE_DIR}")
+    check(
+        within_denylist("/tmp/x")
+        and within_denylist("/usr/bin/x")
+        and not within_denylist("/home/someone/Projects/x"),
+        "路径白名单正常（/tmp、/usr 等不会被记账）",
+    )
+
+    print()
+    print("全部通过，可以 systemctl --user enable --now dsh-wakatime.timer" if passed else "存在未通过项，按提示补齐后再启用 timer")
+    return 0 if passed else 1
+
+
+def cmd_status(_: argparse.Namespace) -> int:
+    state = load_state()
+    sessions = state["sessions"]
+    last = state.get("last_emitted") or {}
+    print(f"状态文件: {STATE_FILE}")
+    print(f"已跟踪会话: {len(sessions)}")
+    print(f"已记录文件: {len(last)}")
+    if sessions:
+        newest = max(sessions.items(), key=lambda kv: kv[1].get("synced_at", 0))
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(newest[1].get("synced_at", 0)))
+        print(f"最近同步: {stamp}  {Path(newest[0]).parent.name}")
+    return 0
+
+
+def cmd_reset(args: argparse.Namespace) -> int:
+    if STATE_FILE.exists():
+        STATE_FILE.unlink()
+    log("进度已清空（下次 sync 会重新扫描并重发）", args.quiet)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="dsh-wakatime", description="把 DSH 会话活动同步到 WakaTime")
+    sub = parser.add_subparsers(dest="command")
+
+    p_sync = sub.add_parser("sync", help="增量同步心跳")
+    p_sync.add_argument("--days", type=int, default=1, help="回填最近 N 天（0 = 全部历史，默认 1）")
+    p_sync.add_argument("--since", metavar="YYYY-MM-DD", help="只处理该日期（本地时区）之后的会话事件")
+    p_sync.add_argument("--category", default="coding", help="WakaTime 分类，默认且仅支持 coding（ai coding 被禁用）")
+    p_sync.add_argument("--dry-run", action="store_true", help="只打印，不发送")
+    p_sync.add_argument(
+        "--include-commands",
+        action="store_true",
+        help="把 bash/run_code 也算进来（以会话目录为锚点，2 分钟一条；默认关闭）",
+    )
+    p_sync.add_argument("--quiet", action="store_true", help="安静模式（systemd 用）")
+    p_sync.set_defaults(func=cmd_sync)
+
+    p_doctor = sub.add_parser("doctor", help="换机器后的依赖与配置自检")
+    p_doctor.set_defaults(func=cmd_doctor)
+
+    p_status = sub.add_parser("status", help="查看同步进度")
+    p_status.set_defaults(func=cmd_status)
+
+    p_reset = sub.add_parser("reset", help="清空同步进度")
+    p_reset.add_argument("--quiet", action="store_true")
+    p_reset.set_defaults(func=cmd_reset)
+
+    args = parser.parse_args()
+    if not getattr(args, "command", None):
+        parser.print_help()
+        return 2
+    if not hasattr(args, "quiet"):
+        args.quiet = False
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

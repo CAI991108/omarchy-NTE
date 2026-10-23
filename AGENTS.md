@@ -2,7 +2,8 @@
 
 Agent-facing notes for `omarchy-NTE` — a personal Omarchy (Arch + Hyprland) desktop
 configuration. The tracked content is `config/` (a mirror of `~/.config`, holding only
-deliberate local changes), plus `install.sh` and the package lists under `packages/`.
+deliberate local changes), plus `install.sh`, the package lists under `packages/`, and
+`bin/` (scripts installed to `~/.local/bin`).
 
 Deployment is a **copy**, not a symlink: Omarchy's `omarchy-refresh-config` runs
 `cp -f` without `--remove-destination`, so it writes *through* symlinks and would

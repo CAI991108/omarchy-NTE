@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically sync DeepSeek Harness activity to WakaTime
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Unit=dsh-wakatime.service
+
+[Install]
+WantedBy=timers.target

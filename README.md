@@ -112,6 +112,26 @@ cd ~/.dsh/profiles/web && pnpm install
 
 </details>
 
+### DSH 活动同步到 WakaTime（可选）
+
+`bin/dsh-wakatime` 把 DSH 会话里 `write` / `edit` / `read` 的文件操作折算成 WakaTime
+心跳，复用本机 `~/.wakatime.cfg` 的 api_key（与 Neovim、VS Code 共用，**密钥不入库**）。
+`install.sh` 会把它装到 `~/.local/bin`，并启用 `dsh-wakatime.timer`（每 2 分钟；
+需要 `python3` 与 `zstd`）。
+
+新机器上只差两步：
+
+```bash
+# 1) 让任意 WakaTime 编辑器插件完成一次认证（会自动下载 wakatime-cli）
+# 2) 自检依赖、CLI、密钥与会话格式
+~/.local/bin/dsh-wakatime doctor
+```
+
+心跳统一记为 `coding`；文件操作用文件锚点，`bash` / `run_code` 以会话目录为锚点
+每 2 分钟记一条（仅 git 项目）。项目名优先取 git 仓库名，没有 git 时用会话 `cwd` 目录名兜底。
+`dsh-wakatime sync --dry-run` 可预览，`status` 看进度。
+运行时状态在 `~/.local/state/dsh-wakatime/`，不入库。
+
 ---
 
 ## 系统环境

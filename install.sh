@@ -327,6 +327,42 @@ else
   dim "  未找到 dsh/，跳过 DSH 配置"
 fi
 
+# ── 2d. dsh-wakatime：把 DSH 的文件操作同步到 WakaTime（可选） ────────────────
+# bin/ 里的脚本安装到 ~/.local/bin；systemd unit 由第 1 步随 config/ 一起部署，
+# 定时器在第 3 步启用。API key 不在仓库里，运行时读 ~/.wakatime.cfg。
+SRC_BIN="$REPO_DIR/bin"
+if [[ -d $SRC_BIN ]]; then
+  step "2d. dsh-wakatime（DSH 活动 → WakaTime）"
+  run mkdir -p "$HOME/.local/bin"
+  bin_deployed=0 bin_skipped=0
+  while IFS= read -r -d '' src; do
+    name="$(basename "$src")"
+    target="$HOME/.local/bin/$name"
+    if [[ -f $target ]] && cmp -s "$src" "$target"; then
+      ((bin_skipped++)) || true
+      continue
+    fi
+    if $DRY_RUN; then
+      printf '%s    would deploy:%s ~/.local/bin/%s\n' "$C_DIM" "$C_RESET" "$name"
+    else
+      backup_file "$target"
+      cp --remove-destination "$src" "$target"
+      chmod +x "$target"
+    fi
+    ((bin_deployed++)) || true
+  done < <(find "$SRC_BIN" -type f -print0 | sort -z)
+  ok "脚本：已部署 $bin_deployed 个，$bin_skipped 个已是最新"
+  dsh_wakatime_ok=true
+  if ! $DRY_RUN && [[ -x $HOME/.local/bin/dsh-wakatime ]]; then
+    if ! "$HOME/.local/bin/dsh-wakatime" doctor; then
+      dsh_wakatime_ok=false
+      warn "doctor 未全部通过，本次不启用 timer（补齐后再 enable）"
+    fi
+  fi
+else
+  dim "  未找到 bin/，跳过 dsh-wakatime"
+fi
+
 # ── 3. systemd user units ─────────────────────────────────────────────────────
 step "3. systemd 用户单元"
 
@@ -340,6 +376,13 @@ if command -v systemctl >/dev/null 2>&1; then
       ok "已启用 $unit"
     fi
   done
+  if [[ -f $DEST_CONFIG/systemd/user/dsh-wakatime.timer ]] && ${dsh_wakatime_ok:-true}; then
+    run systemctl --user daemon-reload
+    run systemctl --user enable --now dsh-wakatime.timer
+    ok "已启用 dsh-wakatime.timer（每 2 分钟同步 DSH 活动）"
+  elif [[ -f $DEST_CONFIG/systemd/user/dsh-wakatime.timer ]]; then
+    warn "已跳过 dsh-wakatime.timer 的启用（doctor 未通过）"
+  fi
   dim "  dsh-web.service 不会被自动启用（它属于 DSH 界面，见 README）"
 else
   warn "找不到 systemctl，跳过服务启用"
