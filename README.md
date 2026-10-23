@@ -127,8 +127,9 @@ cd ~/.dsh/profiles/web && pnpm install
 ~/.local/bin/dsh-wakatime doctor
 ```
 
-心跳统一记为 `coding`；文件操作用文件锚点，`bash` / `run_code` 以会话目录为锚点
-每 2 分钟记一条（仅 git 项目）。项目名优先取 git 仓库名，没有 git 时用会话 `cwd` 目录名兜底。
+心跳统一记为 `coding`；文件操作用文件锚点。`bash` / `run_code` **默认不计**，
+需要时加 `--include-commands`（以会话目录为锚点，每 2 分钟一条，仅 git 项目）。
+项目名优先取 git 仓库名，没有 git 时用会话 `cwd` 目录名兜底。
 `dsh-wakatime sync --dry-run` 可预览，`status` 看进度。
 运行时状态在 `~/.local/state/dsh-wakatime/`，不入库。
 
