@@ -10,6 +10,13 @@ Deployment is a **copy**, not a symlink: Omarchy's `omarchy-refresh-config` runs
 overwrite files inside the repo. `install.sh` copies instead, backs up first, and is
 idempotent.
 
+Extra wallpapers are **pulled, not captured**: `install.sh --wallpapers[=<theme>|all]`
+reads `manifests/wallpapers.tsv` from
+[`omarchy-NTE-wallpaper`](https://github.com/CAI991108/omarchy-NTE-wallpaper), verifies
+each sha256, and installs flat into `~/.config/omarchy/backgrounds/<theme>/`. The one
+bundled wallpaper stays in `config/omarchy/backgrounds/catppuccin/` so a fresh install
+still has a working desktop offline.
+
 ## Capture convention: no absolute home paths
 
 When capturing a config file, store home-relative paths as `~` (or `$HOME`), never

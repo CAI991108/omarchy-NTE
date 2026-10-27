@@ -26,8 +26,14 @@
 #     File *contents* are deployed verbatim.
 #
 # Usage:
-#   ./install.sh                 # deploy
-#   ./install.sh --dry-run       # show what would change, touch nothing
+#   ./install.sh                              # deploy
+#   ./install.sh --dry-run                    # show what would change, touch nothing
+#   ./install.sh --wallpapers                 # also install wallpapers for the current theme
+#   ./install.sh --wallpapers=<theme>         # also install wallpapers for one theme
+#   ./install.sh --wallpapers=all             # also install every theme in the manifest
+#
+# --wallpapers is off by default: without it the script never touches the network.
+# `--dry-run --wallpapers` prints the plan but fetches nothing and writes nothing.
 
 set -euo pipefail
 
@@ -47,8 +53,17 @@ readonly DEST_CONFIG="$HOME/.config"
 # rewritten to $HOME.
 readonly CAPTURED_HOME="${CAPTURED_HOME:-$HOME}"
 
+# Empty = don't touch wallpapers at all (default). "__current__" = resolve from
+# Omarchy's theme.name at install time; otherwise the literal theme name, or "all".
 DRY_RUN=false
-(( $# > 0 )) && [[ $1 == "--dry-run" ]] && DRY_RUN=true
+WALLPAPERS=""
+# Set only for a usage-level wallpaper error (unknown theme). Network/checksum
+# failures stay warnings: the config deployment itself already succeeded.
+wallpaper_usage_error=false
+
+# Where the wallpaper manifest and images live. Override for local testing:
+#   WALLPAPERS_BASE=http://127.0.0.1:8765 ./install.sh --wallpapers=catppuccin
+readonly WALLPAPERS_BASE="${WALLPAPERS_BASE:-https://raw.githubusercontent.com/CAI991108/omarchy-NTE-wallpaper/main}"
 
 # ── repo → deploy path mapping ────────────────────────────────────────────────
 # A few captured files cannot keep their on-disk name: git and shell scripts are
@@ -76,6 +91,22 @@ warn()  { printf '%s  !%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
 step()  { printf '\n%s==>%s %s\n' "$C_CYAN" "$C_RESET" "$*"; }
 die()   { printf '%sERROR:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 
+# ── arguments ─────────────────────────────────────────────────────────────────
+# Keep both flags order-independent and reject anything else, so a typo can't
+# silently deploy without the wallpapers the user asked for.
+while (( $# > 0 )); do
+  case "$1" in
+    --dry-run)      DRY_RUN=true ;;
+    --wallpapers)   WALLPAPERS="__current__" ;;
+    --wallpapers=*)
+      WALLPAPERS="${1#--wallpapers=}"
+      [[ -z $WALLPAPERS ]] && die "--wallpapers= 后面要跟主题名或 all"
+      ;;
+    *)              die "未知参数: $1（支持 --dry-run 和 --wallpapers[=<theme>|all]）" ;;
+  esac
+  shift
+done
+
 # Run a command, or just print it in dry-run mode.
 run() {
   if $DRY_RUN; then
@@ -102,6 +133,31 @@ rewrite_home() {
     /root*)                   printf '%s' "$HOME${text#/root}" ;;
     *)                        printf '%s' "$text" ;;
   esac
+}
+
+# Resolve the active Omarchy theme to a backgrounds/ directory name.
+#
+# 3.8.2 writes the title-cased name to ~/.config/omarchy/current/theme.name
+# ("Catppuccin"); 4.x moved that state under ~/.local/state/omarchy/. Backgrounds
+# directories are lowercase with hyphens, so normalise the name to that shape.
+current_theme() {
+  local file name
+  for file in \
+    "$HOME/.config/omarchy/current/theme.name" \
+    "$HOME/.local/state/omarchy/current/theme.name" \
+    "$HOME/.local/state/omarchy/theme.name"; do
+    [[ -f $file ]] || continue
+    name="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$file" \
+      | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+    [[ -n $name ]] && { printf '%s\n' "$name"; return 0; }
+  done
+  if command -v omarchy >/dev/null 2>&1; then
+    name="$(omarchy theme current 2>/dev/null | head -n1 \
+      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+      | tr '[:upper:]' '[:lower:]' | tr ' ' '-')"
+    [[ -n $name ]] && { printf '%s\n' "$name"; return 0; }
+  fi
+  return 1
 }
 
 
@@ -231,6 +287,113 @@ elif [[ -e $bg_link ]]; then
   dim "  background 不是符号链接，跳过检查"
 else
   dim "  omarchy/current/background 尚不存在（首次换主题后 Omarchy 会生成）"
+fi
+
+# ── 1c. extra wallpapers from omarchy-NTE-wallpaper (optional) ────────────────
+# Off unless --wallpapers was passed. The manifest is the single interface with
+# the wallpaper repo; images deploy FLAT into backgrounds/<theme>/ because
+# Omarchy scans that directory with `find -maxdepth 1`.
+if [[ -n $WALLPAPERS ]]; then
+  step "1c. 额外壁纸（可选）"
+
+  want="$WALLPAPERS"
+  if [[ $want == "__current__" ]]; then
+    if ! want="$(current_theme)"; then
+      warn "无法确定当前主题（找不到 theme.name）；跳过额外壁纸"
+      want=""
+    fi
+  fi
+
+  if [[ -n $want ]]; then
+    info "  清单: $WALLPAPERS_BASE/manifests/wallpapers.tsv"
+    if [[ $want == all ]]; then
+      info "  主题: 清单里的所有主题"
+    else
+      info "  主题: $want"
+    fi
+
+    if $DRY_RUN; then
+      # Deliberately no network in dry-run: we can't list files without fetching
+      # the manifest, so this prints the plan only.
+      dim "    would fetch the manifest, then install matching images into"
+      dim "      ~/.config/omarchy/backgrounds/<theme>/（扁平，sha256 校验）"
+      dim "    dry-run：不联网、不写盘"
+    elif ! command -v curl >/dev/null 2>&1; then
+      warn "找不到 curl，跳过额外壁纸"
+    else
+      wallpaper_tmp="$(mktemp -d)"
+      trap 'rm -rf "$wallpaper_tmp"' EXIT
+
+      wall_installed=0 wall_skipped=0 wall_failed=0 wall_matched=0
+
+      if ! curl -fsSL --max-time 30 "$WALLPAPERS_BASE/manifests/wallpapers.tsv" \
+           -o "$wallpaper_tmp/wallpapers.tsv"; then
+        warn "清单下载失败，跳过额外壁纸: $WALLPAPERS_BASE/manifests/wallpapers.tsv"
+        wall_failed=$((wall_failed + 1))
+      else
+        while IFS=$'\t' read -r w_theme w_id w_file w_preview w_sha w_bytes w_width w_height w_title w_bundled w_credit w_source; do
+          [[ $w_theme == "theme" ]] && continue
+          [[ $want == all || $w_theme == "$want" ]] || continue
+          wall_matched=$((wall_matched + 1))
+
+          dest_dir="$HOME/.config/omarchy/backgrounds/$w_theme"
+          dest="$dest_dir/$(basename "$w_file")"
+
+          # Already there with the same bytes? Nothing to do (idempotent reruns).
+          if [[ -f $dest && "$(sha256sum "$dest" | cut -d' ' -f1)" == "$w_sha" ]]; then
+            wall_skipped=$((wall_skipped + 1))
+            continue
+          fi
+
+          # bundled=1: the config repo already ships this image, possibly under a
+          # spaced filename. sha256 is the only reliable way to recognise it.
+          if [[ $w_bundled == 1 && -d $dest_dir ]] \
+             && find "$dest_dir" -maxdepth 1 -type f -exec sha256sum {} + 2>/dev/null \
+                | awk -v want="$w_sha" '$1 == want { found = 1 } END { exit !found }'; then
+            wall_skipped=$((wall_skipped + 1))
+            continue
+          fi
+
+          tmpfile="$wallpaper_tmp/$(basename "$w_file")"
+          if ! curl -fsSL --max-time 120 "$WALLPAPERS_BASE/$w_file" -o "$tmpfile"; then
+            warn "下载失败: $w_file"
+            wall_failed=$((wall_failed + 1))
+            continue
+          fi
+          if ! printf '%s  %s\n' "$w_sha" "$tmpfile" | sha256sum -c - >/dev/null 2>&1; then
+            warn "校验失败: $w_file"
+            wall_failed=$((wall_failed + 1))
+            continue
+          fi
+
+          backup_file "$dest"
+          if ! install -Dm0644 "$tmpfile" "$dest"; then
+            warn "写入失败: $dest"
+            wall_failed=$((wall_failed + 1))
+            continue
+          fi
+          ok "已安装 ${w_title:-$w_id} → backgrounds/$w_theme/$(basename "$w_file")"
+          wall_installed=$((wall_installed + 1))
+        done <"$wallpaper_tmp/wallpapers.tsv"
+
+        if (( wall_matched == 0 )); then
+          warn "清单里没有主题 '$want'（可查 $WALLPAPERS_BASE/manifests/wallpapers.tsv）"
+          wall_failed=$((wall_failed + 1))
+          wallpaper_usage_error=true
+        fi
+      fi
+
+      ok "额外壁纸：安装 $wall_installed，跳过 $wall_skipped，失败 $wall_failed"
+      if (( wall_failed > 0 )); then
+        warn "有壁纸未能安装；配置部署已完成，可稍后重跑 ./install.sh --wallpapers"
+      elif (( wall_installed + wall_skipped > 0 )); then
+        case "$(omarchy version 2>/dev/null | head -n1)" in
+          4.*) info "  切换壁纸：Super+Ctrl+W（Omarchy 4.x）" ;;
+          *)   info "  切换壁纸：Super+Ctrl+Space（Omarchy 3.8.2）" ;;
+        esac
+      fi
+    fi
+  fi
 fi
 
 # ── 2. rebuild the theme-following symlinks ───────────────────────────────────
@@ -418,4 +581,9 @@ else
   info "    omarchy restart waybar      # 让 waybar 重新读取配置"
   info "    hyprctl reload              # 让 Hyprland 重新读取配置"
   info "    hyprctl configerrors        # 确认没有配置错误"
+fi
+
+if $wallpaper_usage_error; then
+  printf '%sERROR:%s 请求的壁纸主题不存在（配置本身已部署完成）。\n' "$C_RED" "$C_RESET" >&2
+  exit 1
 fi

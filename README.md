@@ -178,6 +178,7 @@ omarchy pkg aur add catppuccin-fcitx5-git
 ```bash
 ./install.sh --dry-run     # 先看会改什么，不写入任何文件
 ./install.sh               # 真正部署
+./install.sh --wallpapers  # 可选：额外拉取当前主题的壁纸（默认不联网）
 ```
 
 <details>
@@ -192,6 +193,11 @@ omarchy pkg aur add catppuccin-fcitx5-git
   `nvim/lua/plugins/theme.lua` 这三个指向 `omarchy/current/theme/` 的链接会被重新建立，
   并把其中的家目录路径改写为当前用户的 `$HOME`
   （它们是主题自动跟随的关键）。
+- **壁纸可选拉取**：`--wallpapers[=<theme>|all]` 会从独立仓库
+  [`omarchy-NTE-wallpaper`](https://github.com/CAI991108/omarchy-NTE-wallpaper)
+  读 `manifests/wallpapers.tsv`，逐张校验 sha256 后扁平安装到
+  `~/.config/omarchy/backgrounds/<theme>/`。不带该参数时完全不联网；
+  `--dry-run` 也不会联网。主仓库自带的壁纸按 sha 识别并跳过。
 - **保留可执行位**：钩子必须是可执行的，否则 Omarchy 不会运行它。
 - **不碰 sudo**：只写 `$HOME` 里的文件。
 
@@ -208,7 +214,22 @@ systemctl --user restart app-org.fcitx.Fcitx5@autostart.service
 
 ### 5. 壁纸
 
-壁纸放在 `config/omarchy/backgrounds/catppuccin/` —— 正是 Omarchy 会自动扫描的路径。
+默认壁纸随 `config/omarchy/backgrounds/catppuccin/` 一起部署，保证离线装完就有桌面。
+
+更多壁纸在独立仓库 [`omarchy-NTE-wallpaper`](https://github.com/CAI991108/omarchy-NTE-wallpaper)：
+画廊 <https://cai991108.github.io/omarchy-NTE-wallpaper/>。按主题拉取：
+
+```bash
+./install.sh --wallpapers                  # 当前主题（读 Omarchy 的 theme.name）
+./install.sh --wallpapers=catppuccin       # 指定主题
+./install.sh --wallpapers=all              # 清单里的所有主题
+./install.sh --dry-run --wallpapers=all    # 只打印计划，不联网、不写盘
+```
+
+安装器读 `manifests/wallpapers.tsv`（`WALLPAPERS_BASE` 可覆盖下载前缀，默认 GitHub raw），
+逐张 sha256 校验后扁平放进 `~/.config/omarchy/backgrounds/<theme>/`。
+网络或校验失败只警告，不会中断配置部署；装完按 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>Space</kbd>
+（3.8.2；4.x 是 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>W</kbd>）切换。
 
 ---
 
@@ -219,7 +240,7 @@ systemctl --user restart app-org.fcitx.Fcitx5@autostart.service
 
 ```
 omarchy-NTE/
-├── install.sh                       # 复制式部署：先备份、幂等、支持 --dry-run
+├── install.sh                       # 复制式部署：先备份、幂等、支持 --dry-run / --wallpapers
 ├── assets/                          # README 用的压缩预览图（assets/dsh/ 是 DSH 截图）
 ├── config/                          # 镜像 ~/.config（只含用户改动）
 │   ├── hypr/ waybar/ mako/ alacritty/ ghostty/ kitty/ btop/
