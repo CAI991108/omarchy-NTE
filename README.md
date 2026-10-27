@@ -27,6 +27,7 @@
 | **输入法（fcitx5）** | `config/fcitx5/` |
 | **自动跟随主题的输入法钩子** | `config/omarchy/hooks/theme-set.d/fcitx5-follow` |
 | Omarchy branding、壁纸 | `config/omarchy/branding/`、`config/omarchy/backgrounds/` |
+| **壁纸画廊（预览 / 下载 / 更多主题）** | <https://cai991108.github.io/omarchy-NTE-wallpaper/> |
 | Neovim | `config/nvim/` |
 | 复现所需的包清单 | `packages/` |
 | **DSH（AI 界面）profile 与本地插件** | `dsh/` |
