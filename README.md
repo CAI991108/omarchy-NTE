@@ -25,7 +25,7 @@
 |---|---|
 | Hyprland / Waybar / Walker / Mako / 终端配置 | `config/hypr/`、`config/waybar/` 等 |
 | **输入法（fcitx5）** | `config/fcitx5/` |
-| **自动跟随主题的输入法钩子** | `config/omarchy/hooks/theme-set.d/fcitx5-follow` |
+| **Quickshell（bar / 通知 / 空闲）** | `config/omarchy/shell.json` |
 | Omarchy branding、壁纸 | `config/omarchy/branding/`、`config/omarchy/backgrounds/` |
 | **壁纸画廊（预览 / 下载 / 更多主题）** | <https://cai991108.github.io/omarchy-NTE-wallpaper/> |
 | Neovim | `config/nvim/` |
@@ -141,8 +141,8 @@ cd ~/.dsh/profiles/web && pnpm install
 - ‼️ **Omarchy** 4.0 · Arch Linux · Hyprland (Wayland) · Quickshell · btrfs
 - 主题：**Catppuccin**（Mocha，accent `#89b4fa`）
 - 输入法：**fcitx5 5.1.23**
-  - 4.0 由 `omarchy-theme-set-fcitx5` 内置生成 `~/.local/share/fcitx5/themes/omarchy`，
-    换主题时自动重建（3.8.2 时代的自定义钩子已退役）
+  - `quattro` 上由 `omarchy-theme-set-fcitx5` 内置生成 `~/.local/share/fcitx5/themes/omarchy`，
+    换主题时自动重建（3.8.2 时代的自定义钩子已退役；`v4.0.6` 正式版尚无此内置）
 
 ---
 
