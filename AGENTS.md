@@ -1,14 +1,20 @@
 # AGENTS.md
 
 Agent-facing notes for `omarchy-NTE` — a personal Omarchy (Arch + Hyprland) desktop
-configuration. The tracked content is `config/` (a mirror of `~/.config`, holding only
-deliberate local changes), plus `install.sh`, the package lists under `packages/`, and
-`bin/` (scripts installed to `~/.local/bin`).
+configuration. The tracked content is three **trees**, each mirroring one directory in
+`$HOME`: `config/` → `~/.config`, `dsh/` → `~/.dsh`, `bin/` → `~/.local/bin`. Plus
+`install.sh` and the package lists under `packages/`.
+
+`main` describes **Omarchy 4.0**; the 3.8.2 tree lives at the tag `omarchy-3.8.2`.
+4.0 replaced the Hyprland `.conf` files with Lua, `waybar`/`mako`/`walker`/`hypridle`
+with one Quickshell process, and moved theme state to `~/.local/state/omarchy/current/`.
+`docs/omarchy-4.md` holds the mapping and the capture procedure; `docs/adr/0002-omarchy-4-cut.md`
+holds the reasoning.
 
 Deployment is a **copy**, not a symlink: Omarchy's `omarchy-refresh-config` runs
 `cp -f` without `--remove-destination`, so it writes *through* symlinks and would
-overwrite files inside the repo. `install.sh` copies instead, backs up first, and is
-idempotent.
+overwrite files inside the repo (re-verified on 4.0's `/usr/bin/omarchy-refresh-config`).
+`install.sh` copies instead, backs up first, and is idempotent.
 
 Extra wallpapers are **pulled, not captured**: `install.sh --wallpapers[=<theme>|all]`
 reads `manifests/wallpapers.tsv` from
@@ -16,6 +22,22 @@ reads `manifests/wallpapers.tsv` from
 each sha256, and installs flat into `~/.config/omarchy/backgrounds/<theme>/`. The one
 bundled wallpaper stays in `config/omarchy/backgrounds/catppuccin/` so a fresh install
 still has a working desktop offline.
+
+## What belongs in `config/`
+
+A file belongs here when it **differs from `$OMARCHY_PATH/config/<same path>`**, or when
+no shipped template exists and the file is deliberately maintained (`systemd/user/`,
+`bin/`, `fontconfig/`). Two consequences worth stating outright:
+
+- Anything that only reproduces a shipped default is **dropped** — `nvim/` (owned by the
+  `omarchy-nvim` package), `btop.conf`, `herdr`'s upstream sample, `monitors.lua`
+  (per-machine), `extensions/omarchy-menu.jsonc` while it matches the default.
+- Runtime state written by an application is **never captured**: `user-dirs.*`,
+  fcitx5's `cached_layouts`, auto-added `mimeapps.list` rows.
+
+Capture is a whole-file **snapshot**; templates are not merged. That is what lets
+`shell.json` — which `omarchy bar` rewrites wholesale — be restored, and it keeps
+deployment copy-only.
 
 ## Capture convention: no absolute home paths
 
@@ -28,7 +50,16 @@ username. Example: the `SUPER+D` DSH binding is stored as
 One deliberate deviation follows from Omarchy's own template: `config/git/config`
 omits the `[user]` and `[credential]` sections (real name, school email, gh helper)
 because the repo is public. Deploying it over a machine that already has them will
-strip that identity — set it again after running `install.sh` on such a machine.
+strip that identity — set it again after running `install.sh` on such a machine. The
+same rule applies to capture: never copy the live `git/config` back into the repo.
+
+## DSH
+
+`dsh/` mirrors `~/.dsh` so the profile's relative `link:../../plugins/...` specs resolve
+after deployment; `pnpm install` is a manual follow-up. The model provider in
+`cordis.patch.yml` defaults to `deepseek-account` (the logged-in flow) — switching to an
+API key means `deepseek-official`. `SUPER+D` runs `bin/dsh-web-open`, which starts the
+headless `dsh-web.service` and opens the UI; see `dsh/README.md`.
 
 ## Agent skills
 
