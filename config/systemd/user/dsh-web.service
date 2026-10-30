@@ -1,18 +1,26 @@
 [Unit]
-Description=DeepSeek Harness Web UI (dsh web)
+Description=DeepSeek Harness web UI (headless dsh web)
 Documentation=https://github.com/deepseek-ai/deepseek-harness
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Projects
-# Headless: no terminal, no browser hand-off. The URL (with its per-launch
-# token) goes to the journal so the SUPER+D launcher can read it.
-ExecStart=/usr/bin/env npx --yes @deepseek-ai/dsh@0.2.1-rc.2 web --no-open --port 3080
+# The web UI takes its default workspace from here; the browser is opened
+# separately by ~/.local/bin/dsh-web-open (SUPER + D).
+WorkingDirectory=%h
+Environment=PATH=%h/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin
+Environment=DSH_PERMISSION_MODE=danger-full-access
+
+# The printed URL carries a per-launch browser-trust token, so keep it: the
+# launcher greps the newest one out of this file instead of parsing the journal.
+ExecStartPre=/bin/mkdir -p %h/.local/state/dsh-web
+ExecStart=%h/.local/share/mise/shims/dsh web --no-open --port 3080
+StandardOutput=append:%h/.local/state/dsh-web/server.log
+StandardError=append:%h/.local/state/dsh-web/server.log
+
 Restart=on-failure
 RestartSec=3
-StandardOutput=journal
-StandardError=journal
+TimeoutStopSec=15
 
 [Install]
 WantedBy=default.target

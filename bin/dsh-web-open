@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Open or focus the DeepSeek Harness web UI without ever opening a terminal.
+#
+# The server lives in the user manager (dsh-web.service), so it keeps running
+# after this launcher exits and survives Hyprland restarts. This script only:
+#   1. makes sure something is listening on 127.0.0.1:3080 (starting the unit
+#      when nothing is),
+#   2. reads the newest browser-trust URL that `dsh web` printed,
+#   3. focuses an existing DSH window, or opens the URL as a web app.
+set -uo pipefail
+
+port=${DSH_WEB_PORT:-3080}
+root="http://127.0.0.1:$port"
+state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/dsh-web
+log_file=$state_dir/server.log
+unit=dsh-web.service
+
+# Any HTTP status means the server is up; 401 is the expected answer to a
+# request that carries no browser-trust cookie.
+listening() {
+  local code
+  code=$(curl -s -o /dev/null -m 1 -w '%{http_code}' "$root/" 2>/dev/null)
+  [[ -n ${code:-} && $code != 000 ]]
+}
+
+fresh_url() {
+  grep -ao "http://127\.0\.0\.1:$port/?token=[A-Za-z0-9_-]*" "$log_file" 2>/dev/null | tail -n1
+}
+
+notify() {
+  command -v omarchy-notification-send >/dev/null &&
+    omarchy-notification-send -g 󰚩 "DeepSeek Harness" "$1" >/dev/null 2>&1
+  return 0
+}
+
+if ! listening; then
+  mkdir -p "$state_dir"
+  # A stale log from a previous run would hand out a dead token.
+  : >"$log_file"
+  systemctl --user reset-failed "$unit" >/dev/null 2>&1
+  if ! systemctl --user start "$unit"; then
+    notify "启动失败：systemctl --user start $unit 看看原因"
+    exit 1
+  fi
+  # The URL line appears once the server has bound the port.
+  for _ in $(seq 1 100); do
+    [[ -n $(fresh_url) ]] && break
+    listening && break
+    sleep 0.1
+  done
+  started=1
+fi
+
+url=$(fresh_url)
+[[ -z $url ]] && url="$root/"
+
+# Focus an already-open DSH window (web app or browser tab) instead of
+# stacking another one. A window left over from a server we just replaced is
+# still pointed at the old one, so only reuse a window when the server was
+# already up before this launch.
+if [[ ${started:-0} == 0 ]] && command -v hyprctl >/dev/null && command -v jq >/dev/null; then
+  # Prefer a web-app window (its own app id) over a plain browser tab, so a
+  # leftover DSH tab doesn't win over the real app window.
+  address=$(hyprctl clients -j 2>/dev/null |
+    jq -r '[.[] | select(((.class // "") | test("deepseek"; "i")) or ((.title // "") | test("deepseek harness"; "i")))
+            | {address, browser: ((.class // "") == "chromium")}]
+           | sort_by(.browser) | .[0].address // empty')
+  if [[ -n $address ]]; then
+    hyprctl dispatch focuswindow "address:$address" >/dev/null 2>&1 && exit 0
+  fi
+fi
+
+# Chromium-based web app window, same path Omarchy uses for its own web apps.
+exec omarchy-launch-webapp "$url"
