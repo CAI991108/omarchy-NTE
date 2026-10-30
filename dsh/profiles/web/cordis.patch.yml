@@ -22,8 +22,10 @@
 - id: ui-theme
   name: "@deepseek-ai/dsh-client-ui-theme"
   config:
-    preference: dark
-    fontSize: 16
+    preference: system
+    fontSize: 20
+    codeFontSize: 12
+    terminalFontSize: 14
 - id: ui-chat
   name: "@deepseek-ai/dsh-client-ui-chat"
   config:
@@ -40,6 +42,6 @@
 - id: agent-default-model
   name: "@deepseek-ai/dsh-agent-default-model"
   config:
-    provider: deepseek-official
+    provider: deepseek-account
     model: deepseek-flash
     reasoningEffort: max

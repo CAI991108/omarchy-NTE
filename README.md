@@ -5,12 +5,12 @@
 
 [![Arch Linux](https://img.shields.io/badge/Arch_Linux-1793D1?logo=arch-linux&logoColor=white)](https://archlinux.org/)
 [![Hyprland](https://img.shields.io/badge/Hyprland-Wayland-58E1FF?logo=hyprland&logoColor=white)](https://hypr.land/)
-[![Omarchy](https://img.shields.io/badge/Omarchy-3.8.2-blue?logo=omarchy&logoColor=white)](https://omarchy.org/)
+[![Omarchy](https://img.shields.io/badge/Omarchy-4.0-blue?logo=omarchy&logoColor=white)](https://omarchy.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
 
-[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.2-4D6BFE?logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.5-4D6BFE?logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 [![Catppuccin](https://img.shields.io/badge/Catppuccin-Mocha-cba6f7?labelColor=1e1e2e)](https://catppuccin.com/)
-[![fcitx5](https://img.shields.io/badge/fcitx5-5.1.19-2E7D9A)](https://fcitx-im.org/)
+[![fcitx5](https://img.shields.io/badge/fcitx5-5.1.23-2E7D9A)](https://fcitx-im.org/)
 [![Neovim](https://img.shields.io/badge/Neovim-LazyVim-57A143?logo=neovim&logoColor=white)](https://www.lazyvim.org/)
 
 <p align="center">
@@ -94,7 +94,7 @@
 cd ~/.dsh/profiles/web && pnpm install
 ```
 
-细节见 [`dsh/README.md`](dsh/README.md)。
+细节见 [`dsh/README.md`](dsh/README.md)。`Super + D` 静默拉起（不占终端）：先 `systemctl --user start dsh-web`，再由 [`bin/dsh-web-open`](bin/dsh-web-open) 开窗口。
 
 <details>
 <summary><b>配置支持一键打包安装（点击展开）</b></summary>
@@ -138,19 +138,17 @@ cd ~/.dsh/profiles/web && pnpm install
 
 ## 系统环境
 
-- ‼️ **Omarchy** 3.8.2 · Arch Linux · Hyprland (Wayland) · btrfs
+- ‼️ **Omarchy** 4.0 · Arch Linux · Hyprland (Wayland) · Quickshell · btrfs
 - 主题：**Catppuccin**（Mocha，accent `#89b4fa`）
-- 输入法：**fcitx5 5.1.19**
-  - 面板主题 `catppuccin-mocha-blue`，字号 `Sans 13`
-  - 主题由 AUR 包 [`catppuccin-fcitx5-git`](https://aur.archlinux.org/packages/catppuccin-fcitx5-git) 提供
-    （56 个变体，含圆角）
-  - 换 Omarchy 主题时，`fcitx5-follow` 钩子会自动同步输入法配色
+- 输入法：**fcitx5 5.1.23**
+  - 4.0 由 `omarchy-theme-set-fcitx5` 内置生成 `~/.local/share/fcitx5/themes/omarchy`，
+    换主题时自动重建（3.8.2 时代的自定义钩子已退役）
 
 ---
 
-## 快速一键安装 —— **Omarchy** 3.8.2
+## 快速一键安装 —— **Omarchy** 4.0
 
-> 最新的 Omarchy 4.x.x 可以把仓库拉下来替换 config 以及壁纸。
+> 3.8.2 的完整配置在 tag [`omarchy-3.8.2`](https://github.com/CAI991108/omarchy-NTE/tree/omarchy-3.8.2)；迁移说明见 [`docs/omarchy-4.md`](docs/omarchy-4.md)。
 
 ### 1. 克隆
 
@@ -229,8 +227,8 @@ systemctl --user restart app-org.fcitx.Fcitx5@autostart.service
 
 安装器读 `manifests/wallpapers.tsv`（`WALLPAPERS_BASE` 可覆盖下载前缀，默认 GitHub raw），
 逐张 sha256 校验后扁平放进 `~/.config/omarchy/backgrounds/<theme>/`。
-网络或校验失败只警告，不会中断配置部署；装完按 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>Space</kbd>
-（3.8.2；4.x 是 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>W</kbd>）切换。
+网络或校验失败只警告，不会中断配置部署；装完按 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>W</kbd> 切换（3.8.2 下是
+<kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>Space</kbd>）。
 
 ---
 
@@ -244,15 +242,15 @@ omarchy-NTE/
 ├── install.sh                       # 复制式部署：先备份、幂等、支持 --dry-run / --wallpapers
 ├── assets/                          # README 用的压缩预览图（assets/dsh/ 是 DSH 截图）
 ├── config/                          # 镜像 ~/.config（只含用户改动）
-│   ├── hypr/ waybar/ mako/ alacritty/ ghostty/ kitty/ btop/
+│   ├── hypr/ alacritty/ ghostty/ kitty/ btop/
 │   ├── fcitx5/                      # 输入法（Theme / Font 在这里）
 │   ├── omarchy/
-│   │   ├── hooks/theme-set.d/fcitx5-follow    ⭐ 唯一的自定义钩子
+│   │   ├── shell.json               # bar / 通知 / 空闲（Quickshell）
 │   │   ├── branding/                # fastfetch + 锁屏 ASCII 图案
 │   │   ├── backgrounds/catppuccin/  # 当前壁纸
 │   │   └── themes/                  # 自定义主题（暂空，留给以后）
-│   ├── nvim/ systemd/ fontconfig/ git/ ...
-│   └── *.conf  mimeapps.list  user-dirs.dirs 等散文件
+│   ├── systemd/ fontconfig/ git/ ...
+│   └── *.conf  mimeapps.list 等散文件
 ├── dsh/                             # DSH (AI 界面) profile 与本地插件
 │   ├── profiles/web/                # → ~/.dsh/profiles/web
 │   └── plugins/                     # → ~/.dsh/plugins（dsh-brand-cover、dsh-effort-slider）

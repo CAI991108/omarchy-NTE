@@ -41,8 +41,20 @@ cd ~/.dsh/profiles/web && pnpm install
 
 > 这一步需要网络（要拉 npm 上的第三方插件），所以没有写进 `install.sh`。
 
+## 静默启动
+
+`config/systemd/user/dsh-web.service` 把 `dsh web --no-open` 交给 systemd 用户管理器，
+`bin/dsh-web-open` 负责「没起就起、起了就开窗口」，`SUPER + D` 绑的是后者。
+终端窗口在这一路上不存在。
+
+服务用 mise 的 shim（`~/.local/share/mise/shims/dsh`）而不是钉死版本号，
+所以升级 DSH 是 `mise use -g npm:@deepseek-ai/dsh@<版本>` 的事，不用改单元文件。
+URL 带一次性 browser-trust token，写在 `~/.local/state/dsh-web/server.log` 里给启动器读。
+
 ## 换机器时要留意
 
-- DSH 自身的版本由 `config/systemd/user/dsh-web.service` 里的 `dsh@<版本>`
-  钉住，与本目录的插件版本配套；升级 DSH 后建议同时重新捕获这份配置。
+- **模型 provider**：`cordis.patch.yml` 里默认 `deepseek-account`（登录态）。
+  若改用 API key，把它换成 `deepseek-official`，否则新会话取不到模型。
+- `install.sh` 会部署单元文件，但**不会自动 enable**；要不要开机自启由你决定：
+  `systemctl --user enable dsh-web.service`。
 - 本目录记录的是**界面配置**，与 `config/`（桌面配置）互不影响。
