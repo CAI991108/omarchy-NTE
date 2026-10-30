@@ -124,3 +124,6 @@ Thumbs.db
 *.pid
 *.sock
 Singleton*
+
+# DSH skills-deck runtime cache (not config)
+.dsh-mattskillsdeck-cache/
