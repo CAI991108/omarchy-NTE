@@ -1,29 +1,33 @@
 #!/bin/bash
 #
-# install.sh — deploy this repo's config/ tree into ~/.config
+# install.sh — deploy this repo's trees into $HOME (~/.config, ~/.dsh, ~/.local/bin)
 #
 # Design notes (why it works the way it does):
 #
 #   * COPY, not symlink. Omarchy's `omarchy-refresh-config` runs `cp -f` and
 #     therefore WRITES THROUGH symlinks: it would silently overwrite the files
-#     in this repo instead of replacing the links. Verified against
-#     ~/.local/share/omarchy/bin/omarchy-refresh-config on Omarchy 3.8.2.
-#     Copying keeps this repo immune to refresh/reinstall.
+#     in this repo instead of replacing the links. Re-verified on Omarchy 4.0
+#     against /usr/bin/omarchy-refresh-config (still plain `cp -f`, no
+#     --remove-destination). Copying keeps this repo immune to refresh/reinstall.
 #
 #   * Backups first, always. Every file we are about to overwrite is saved as
 #     <target>.bak.<unixtime> before being touched. Nothing is deleted.
 #
-#   * Symlinks are rebuilt, not copied. Three files in config/ are symlinks into
-#     ~/.config/omarchy/current/theme/, which Omarchy regenerates on every theme
-#     change. We recreate them so the theme keeps following automatically.
+#   * One tree = one row. config/ → ~/.config, dsh/ → ~/.dsh, bin/ → ~/.local/bin.
+#     Adding a tree is one line in TREES; see the table below.
+#
+#   * Symlinks are rebuilt, not copied. The remaining theme-following symlink in
+#     config/ (btop) points into ~/.local/state/omarchy/current/theme/, which
+#     Omarchy regenerates on every theme change. We recreate it so the theme keeps
+#     following automatically. 3.8.2 kept that state under ~/.config/omarchy/current.
 #
 #   * No sudo. This only writes inside $HOME. Package installation is a separate,
 #     human-reviewed step; see README.md.
 #
-#   * Symlink targets are rewritten. The three theme-following symlinks in
-#     config/ point at an absolute home path recorded at capture time; those are
-#     rewritten to the current user's $HOME so they keep working on a new machine.
-#     File *contents* are deployed verbatim.
+#   * Symlink targets are rewritten. The theme-following symlink in config/ points
+#     at a home path recorded at capture time; it is rewritten to the current
+#     user's $HOME so it keeps working on a new machine. File *contents* are
+#     deployed verbatim.
 #
 # Usage:
 #   ./install.sh                              # deploy
@@ -203,10 +207,21 @@ else
   dim "  $DEST_CONFIG 不存在，跳过快照"
 fi
 
-# ── 1. deploy regular files ───────────────────────────────────────────────────
-step "1. 部署配置文件"
-
-deployed=0 skipped=0
+# ── 1. deploy trees ───────────────────────────────────────────────────────────
+# The repo is a set of trees, each mirroring one directory in $HOME. Adding a
+# tree is one row: source dir in the repo | destination dir | per-file handler.
+# The loop owns discovery, backups, idempotency and dry-run reporting; a handler
+# owns whatever is file-specific (renames, executable bits).
+#
+#   config/ → ~/.config      verbatim contents; a few files are renamed on the way
+#   dsh/    → ~/.dsh         mirrors ~/.dsh, so the profile's relative
+#                            `link:../../plugins/...` specs resolve after deploy
+#   bin/    → ~/.local/bin   always executable
+TREES=(
+  "config|$DEST_CONFIG|deploy_config_file"
+  "dsh|$HOME/.dsh|deploy_plain_file"
+  "bin|$HOME/.local/bin|deploy_executable_file"
+)
 
 backup_file() {
   local target="$1"
@@ -216,27 +231,20 @@ backup_file() {
   dim "      备份: ${backup/#$HOME/\~}"
 }
 
-deploy_file() {
-  local src="$1" rel="${1#"$SRC_CONFIG"/}"
-  # PATH_OVERRIDES lets a few files deploy under a different name than they are
-  # stored under in git (see the wallpaper entry at the top of this script).
-  local target="$DEST_CONFIG/${PATH_OVERRIDES[$rel]:-$rel}"
+# Copy one file. Returns 1 when the target already holds the same bytes, so the
+# caller can count skips without re-implementing the comparison.
+deploy_copy() {
+  local src="$1" target="$2" exec_bit="${3:-no}"
 
   $DRY_RUN || mkdir -p "$(dirname "$target")"
 
-  # Unchanged? Then leave it alone (idempotent re-runs).
   if [[ -f $target && ! -L $target ]] && cmp -s "$src" "$target"; then
-    ((skipped++)) || true
-    return 0
+    return 1
   fi
 
   $DRY_RUN || backup_file "$target"
   run cp --remove-destination "$src" "$target"
-
-  # Preserve the executable bit (Omarchy only runs executable hooks).
-  if [[ -x $src ]]; then
-    run chmod +x "$target"
-  fi
+  [[ $exec_bit == yes ]] && run chmod +x "$target"
 
   # NOTE: file *contents* are deployed verbatim. This repo's configs are captured
   # without hard-coded home paths: the `SUPER+D` binding that opens the DSH web UI
@@ -244,29 +252,90 @@ deploy_file() {
   # for any username. If you fork this repo and your configs do contain absolute
   # home paths, prefer replacing them with $HOME or ~ in the config itself rather
   # than patching here. Symlink *targets* still reference the capture-time home and
-  # ARE rewritten — see rewrite_home() and step 2.
-
-  ((deployed++)) || true
-  if $DRY_RUN; then
-    # Show the deployed name when PATH_OVERRIDES renames the file, e.g. the
-    # hyphenated wallpaper landing under its original spaced filename.
-    local shown="$rel" deployed_rel="${target#"$DEST_CONFIG"/}"
-    if [[ $rel != "$deployed_rel" ]]; then
-      shown="$rel  →  $deployed_rel"
-    fi
-    printf '%s    would deploy:%s %s\n' "$C_DIM" "$C_RESET" "$shown"
-  fi
+  # ARE rewritten — see rewrite_home() and the symlink step.
+  return 0
 }
 
-while IFS= read -r -d '' src; do
-  # Symlinks are handled in step 2. `.gitkeep` placeholders only exist so git
-  # keeps otherwise-empty directories; they are not deployed.
-  [[ -L $src ]] && continue
-  [[ $(basename "$src") == ".gitkeep" ]] && continue
-  deploy_file "$src"
-done < <(find "$SRC_CONFIG" -type f -print0 | sort -z)
+deploy_config_file() {
+  local src="$1" rel="$2"
+  # PATH_OVERRIDES lets a few files deploy under a different name than they are
+  # stored under in git (see the wallpaper entry at the top of this script).
+  local target="$DEST_CONFIG/${PATH_OVERRIDES[$rel]:-$rel}"
+  local exec_bit=no
+  [[ -x $src ]] && exec_bit=yes
 
-ok "已部署 $deployed 个文件，$skipped 个已是最新"
+  if deploy_copy "$src" "$target" "$exec_bit"; then
+    if $DRY_RUN; then
+      # Show the deployed name when PATH_OVERRIDES renames the file, e.g. the
+      # hyphenated wallpaper landing under its original spaced filename.
+      local shown="$rel" deployed_rel="${target#"$DEST_CONFIG"/}"
+      [[ $rel != "$deployed_rel" ]] && shown="$rel  →  $deployed_rel"
+      printf '%s    would deploy:%s config/%s\n' "$C_DIM" "$C_RESET" "$shown"
+    fi
+    return 0
+  fi
+  return 1
+}
+
+deploy_plain_file() {
+  local src="$1" rel="$2"
+  if deploy_copy "$src" "$HOME/.dsh/$rel"; then
+    $DRY_RUN && printf '%s    would deploy:%s dsh/%s\n' "$C_DIM" "$C_RESET" "$rel"
+    return 0
+  fi
+  return 1
+}
+
+deploy_executable_file() {
+  local src="$1" rel="$2"
+  if deploy_copy "$src" "$HOME/.local/bin/$rel" yes; then
+    $DRY_RUN && printf '%s    would deploy:%s ~/.local/bin/%s\n' "$C_DIM" "$C_RESET" "$rel"
+    return 0
+  fi
+  return 1
+}
+
+# Deploy one tree, reporting per tree so a failure is attributable to a row.
+deploy_tree() {
+  local src_root="$1" dest_root="$2" handler="$3"
+  local src rel deployed=0 skipped=0
+  while IFS= read -r -d '' src; do
+    # Symlinks are rebuilt in their own step; `.gitkeep` placeholders only exist
+    # so git keeps otherwise-empty directories and are never deployed.
+    [[ -L $src ]] && continue
+    [[ $(basename "$src") == ".gitkeep" ]] && continue
+    rel="${src#"$src_root"/}"
+    if "$handler" "$src" "$rel"; then
+      ((deployed++)) || true
+    else
+      ((skipped++)) || true
+    fi
+  done < <(find "$src_root" -type f -print0 | sort -z)
+
+  if $DRY_RUN; then
+    ok "$(basename "$src_root")/ → ${dest_root/#$HOME/\~}/：$deployed 个待部署，$skipped 个已是最新"
+  else
+    ok "$(basename "$src_root")/ → ${dest_root/#$HOME/\~}/：已部署 $deployed 个，$skipped 个已是最新"
+  fi
+  total_deployed=$((total_deployed + deployed))
+  total_skipped=$((total_skipped + skipped))
+}
+
+step "1. 部署配置树"
+total_deployed=0 total_skipped=0
+for row in "${TREES[@]}"; do
+  IFS='|' read -r tree_src tree_dest tree_handler <<<"$row"
+  if [[ ! -d $REPO_DIR/$tree_src ]]; then
+    dim "  未找到 $tree_src/，跳过"
+    continue
+  fi
+  deploy_tree "$REPO_DIR/$tree_src" "$tree_dest" "$tree_handler"
+done
+
+if [[ -d $HOME/.dsh/profiles/web ]] && ! $DRY_RUN && (( total_deployed > 0 )); then
+  info "  DSH 依赖还没安装。要让配置生效，执行："
+  info "    cd ~/.dsh/profiles/web && pnpm install"
+fi
 
 # ── 1b. wallpaper sanity check ────────────────────────────────────────────────
 # Omarchy regenerates omarchy/current/background on every theme change and points
@@ -399,9 +468,10 @@ fi
 # ── 2. rebuild the theme-following symlinks ───────────────────────────────────
 step "2. 重建主题跟随符号链接"
 
-# These point into ~/.config/omarchy/current/theme/, which Omarchy regenerates on
-# every theme change. Recreating them (rather than copying file contents) is what
-# keeps mako/btop/nvim in sync with the active theme.
+# These point into ~/.local/state/omarchy/current/theme/, which Omarchy regenerates
+# on every theme change. Recreating them (rather than copying file contents) is what
+# keeps btop in sync with the active theme. Omarchy 4 generates its own fcitx5 theme,
+# so no hook is needed for the input method any more.
 link_count=0
 while IFS= read -r -d '' src; do
   rel="${src#"$SRC_CONFIG"/}"
@@ -447,106 +517,32 @@ while IFS= read -r -d '' dir; do
   fi
 done < <(find "$SRC_CONFIG" -name '.gitkeep' -printf '%h\0' | sort -zu)
 
-# ── 2c. deploy the DSH profile and its local plugins (optional) ───────────────
-# dsh/ mirrors ~/.dsh exactly, so the profile's relative "link:../../plugins/..."
-# specs resolve both inside the repo and after deployment. node_modules is not
-# tracked; the deployed profile needs `pnpm install` before it will run.
-SRC_DSH="$REPO_DIR/dsh"
-if [[ -d $SRC_DSH ]]; then
-  step "2c. DSH 配置与本地插件"
+# ── 3. systemd user units ─────────────────────────────────────────────────────
+step "3. systemd 用户单元"
 
-  dest_profile="$HOME/.dsh/profiles/web"
-  dest_plugins="$HOME/.dsh/plugins"
-  dsh_deployed=0 dsh_skipped=0
-
-  while IFS= read -r -d '' src; do
-    rel="${src#"$SRC_DSH"/}"
-    case "$rel" in
-      profiles/web/*) target="$dest_profile/${rel#profiles/web/}" ;;
-      plugins/*)      target="$dest_plugins/${rel#plugins/}" ;;
-      *)              continue ;;
-    esac
-
-    $DRY_RUN || mkdir -p "$(dirname "$target")"
-    if [[ -f $target ]] && cmp -s "$src" "$target"; then
-      ((dsh_skipped++)) || true
-      continue
-    fi
-
-    $DRY_RUN || backup_file "$target"
-    run cp --remove-destination "$src" "$target"
-    ((dsh_deployed++)) || true
-    if $DRY_RUN; then
-      printf '%s    would deploy:%s dsh/%s\n' "$C_DIM" "$C_RESET" "$rel"
-    fi
-  done < <(find "$SRC_DSH" -type f -print0 | sort -z)
-
-  ok "DSH：已部署 $dsh_deployed 个文件，$dsh_skipped 个已是最新"
-  if ! $DRY_RUN && (( dsh_deployed > 0 )); then
-    info "  依赖还没安装。要让配置生效，执行："
-    info "    cd $dest_profile && pnpm install"
-  fi
-else
-  dim "  未找到 dsh/，跳过 DSH 配置"
-fi
-
-# ── 2d. dsh-wakatime：把 DSH 的文件操作同步到 WakaTime（可选） ────────────────
-# bin/ 里的脚本安装到 ~/.local/bin；systemd unit 由第 1 步随 config/ 一起部署，
-# 定时器在第 3 步启用。API key 不在仓库里，运行时读 ~/.wakatime.cfg。
-SRC_BIN="$REPO_DIR/bin"
-if [[ -d $SRC_BIN ]]; then
-  step "2d. dsh-wakatime（DSH 活动 → WakaTime）"
-  run mkdir -p "$HOME/.local/bin"
-  bin_deployed=0 bin_skipped=0
-  while IFS= read -r -d '' src; do
-    name="$(basename "$src")"
-    target="$HOME/.local/bin/$name"
-    if [[ -f $target ]] && cmp -s "$src" "$target"; then
-      ((bin_skipped++)) || true
-      continue
-    fi
-    if $DRY_RUN; then
-      printf '%s    would deploy:%s ~/.local/bin/%s\n' "$C_DIM" "$C_RESET" "$name"
-    else
-      backup_file "$target"
-      cp --remove-destination "$src" "$target"
-      chmod +x "$target"
-    fi
-    ((bin_deployed++)) || true
-  done < <(find "$SRC_BIN" -type f -print0 | sort -z)
-  ok "脚本：已部署 $bin_deployed 个，$bin_skipped 个已是最新"
+# The dsh-wakatime timer is enabled only when its doctor passes: the API key lives
+# in ~/.wakatime.cfg, never in this repo. dsh-web.service is deliberately NOT
+# enabled — whether DSH starts with the session is the user's call (README).
+if command -v systemctl >/dev/null 2>&1; then
   dsh_wakatime_ok=true
   if ! $DRY_RUN && [[ -x $HOME/.local/bin/dsh-wakatime ]]; then
     if ! "$HOME/.local/bin/dsh-wakatime" doctor; then
       dsh_wakatime_ok=false
-      warn "doctor 未全部通过，本次不启用 timer（补齐后再 enable）"
+      warn "dsh-wakatime doctor 未全部通过，本次不启用 timer（补齐后再 enable）"
     fi
   fi
-else
-  dim "  未找到 bin/，跳过 dsh-wakatime"
-fi
 
-# ── 3. systemd user units ─────────────────────────────────────────────────────
-step "3. systemd 用户单元"
-
-if command -v systemctl >/dev/null 2>&1; then
-  # elephant.service is enabled by Omarchy's own refresh; re-enable defensively
-  # so the Eleemosynary menus keep working.
-  for unit in elephant.service; do
-    if [[ -f $DEST_CONFIG/systemd/user/$unit ]]; then
-      run systemctl --user daemon-reload
-      run systemctl --user enable "$unit"
-      ok "已启用 $unit"
-    fi
-  done
-  if [[ -f $DEST_CONFIG/systemd/user/dsh-wakatime.timer ]] && ${dsh_wakatime_ok:-true}; then
+  if [[ -f $DEST_CONFIG/systemd/user/dsh-wakatime.timer ]] && $dsh_wakatime_ok; then
     run systemctl --user daemon-reload
     run systemctl --user enable --now dsh-wakatime.timer
     ok "已启用 dsh-wakatime.timer（每 2 分钟同步 DSH 活动）"
   elif [[ -f $DEST_CONFIG/systemd/user/dsh-wakatime.timer ]]; then
     warn "已跳过 dsh-wakatime.timer 的启用（doctor 未通过）"
   fi
-  dim "  dsh-web.service 不会被自动启用（它属于 DSH 界面，见 README）"
+  if [[ -f $DEST_CONFIG/systemd/user/dsh-web.service ]]; then
+    dim "  dsh-web.service 不会被自动启用；要开机静默拉起 DSH，执行："
+    dim "    systemctl --user enable dsh-web.service"
+  fi
 else
   warn "找不到 systemctl，跳过服务启用"
 fi
@@ -562,8 +558,9 @@ if command -v fcitx5 >/dev/null 2>&1; then
   else
     dim "  fcitx5 未在运行，登录后会自动启动"
   fi
-  dim "  主题 catppuccin-mocha-blue 由 AUR 包提供："
-  dim "    omarchy pkg aur add catppuccin-fcitx5-git"
+  dim "  Omarchy 4 自己生成 fcitx5 主题（omarchy-theme-set-fcitx5）："
+  dim "    换主题时 ~/.local/share/fcitx5/themes/omarchy 会跟着重建"
+  dim "  要自定义面板，就在 ~/.config/omarchy/themes/<theme>/ 里放 fcitx5-theme.conf"
 else
   warn "未安装 fcitx5，跳过"
 fi
@@ -578,9 +575,10 @@ else
   info "  单独文件的备份: *${C_DIM}.bak.$STAMP${C_RESET}"
   echo
   info "  建议下一步："
-  info "    omarchy restart waybar      # 让 waybar 重新读取配置"
-  info "    hyprctl reload              # 让 Hyprland 重新读取配置"
+  info "    hyprctl reload              # 让 Hyprland 重新读取 Lua 配置"
   info "    hyprctl configerrors        # 确认没有配置错误"
+  info "    omarchy restart terminal    # 让终端重新读取主题 include"
+  info "    omarchy restart shell       # 让 Quickshell 的 bar/通知重新读取 shell.json"
 fi
 
 if $wallpaper_usage_error; then
