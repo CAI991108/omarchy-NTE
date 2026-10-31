@@ -5,7 +5,7 @@ configuration. The tracked content is three **trees**, each mirroring one direct
 `$HOME`: `config/` → `~/.config`, `dsh/` → `~/.dsh`, `bin/` → `~/.local/bin`. Plus
 `install.sh` and the package lists under `packages/`.
 
-`main` describes **Omarchy 4.0**; the 3.8.2 tree lives at the tag `omarchy-3.8.2`.
+`main` tracks the 4.0 machine. The 3.8 machine is still current somewhere, so the 3.8 line is a long-lived branch `legacy/3.8` (the tag `omarchy-3.8.2` is the cut-day snapshot). Fixes for that machine go on `legacy/3.8` only; nothing is merged across the cut.
 4.0 replaced the Hyprland `.conf` files with Lua, `waybar`/`mako`/`walker`/`hypridle`
 with one Quickshell process, and moved theme state to `~/.local/state/omarchy/current/`.
 `docs/omarchy-4.md` holds the mapping and the capture procedure; `docs/adr/0002-omarchy-4-cut.md`
