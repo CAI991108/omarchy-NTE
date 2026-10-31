@@ -5,12 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  omaseek-pixel@0.2.1:
-    hash: c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91
-    path: patches/omaseek-pixel@0.2.1.patch
-  omaseek-themes@0.3.2:
-    hash: 3f88e770c61a3de53edccf0cdca45a1470ec93651dde489212e657aee5a56a00
-    path: patches/omaseek-themes@0.3.2.patch
+  omaseek-pixel@0.2.2:
+    hash: 2e59422d11e4ac71161a12e42a6ff74b91649e99443efc11913ef8b3fceeafad
+    path: patches/omaseek-pixel@0.2.2.patch
 
 importers:
 
@@ -35,11 +32,11 @@ importers:
         specifier: ^0.2.6
         version: 0.2.6
       omaseek-pixel:
-        specifier: ^0.2.1
-        version: 0.2.1(patch_hash=c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91)
+        specifier: ^0.2.2
+        version: 0.2.2(patch_hash=2e59422d11e4ac71161a12e42a6ff74b91649e99443efc11913ef8b3fceeafad)
       omaseek-themes:
-        specifier: ^0.3.2
-        version: 0.3.2(patch_hash=3f88e770c61a3de53edccf0cdca45a1470ec93651dde489212e657aee5a56a00)
+        specifier: ^0.3.3
+        version: 0.3.3
 
 packages:
 
@@ -594,11 +591,11 @@ packages:
   omaseek-music@0.2.6:
     resolution: {integrity: sha512-tmGEKHsZF5wKHlXxN+QkR9AtHzDUPwyr9/OA2Njn4o9yBnxQrzDEQCQUWElZXkP3KlLWOzwxPywecaJb4GBewQ==}
 
-  omaseek-pixel@0.2.1:
-    resolution: {integrity: sha512-oloohss3Sq3+08SZ7agAwi78tUY/oK7mZNaEWG06P0FM146pD3gFQ1jxAvNPuYrW/hxIaYuDVsOBnDygLLPbZA==}
+  omaseek-pixel@0.2.2:
+    resolution: {integrity: sha512-r79cFLcxXjKs11XPEUDGegoAp+SB1Z6hTJWssOLDBHPabQ1US9+2QhHEXgdV9P3NvmpxNWThL1GnoFwXAxoq8A==}
 
-  omaseek-themes@0.3.2:
-    resolution: {integrity: sha512-ufUvV566KTg2ejkgFfsVZM5WzoPo/LdL/PU1r9LRKznE0s7o6hCrifM6FEScFszkaudg6pXsnTvhP1G1Jo0lBw==}
+  omaseek-themes@0.3.3:
+    resolution: {integrity: sha512-v1sPLYwI9iZGKxCE/quW8WjzISItQ/msn1FqOpRC2qy8J3srVculEAB9wvcIK9ZCFhVBtVIaenbT0eZtoEV9/w==}
 
   package-manager-detector@1.9.0:
     resolution: {integrity: sha512-zAMfbta9nPA8AKkA4WdmNAT8R8s6Dk0/xwPsqNnRidMFcLo1YkLuPDTgs2f64XdzS8vbLNnoJ+uUIkgbz7oRHA==}
@@ -1434,9 +1431,9 @@ snapshots:
 
   omaseek-music@0.2.6: {}
 
-  omaseek-pixel@0.2.1(patch_hash=c86b46e1e29d7d618c13dabefa841a49c5d4ef80a83b9d289c07ccdca06c9c91): {}
+  omaseek-pixel@0.2.2(patch_hash=2e59422d11e4ac71161a12e42a6ff74b91649e99443efc11913ef8b3fceeafad): {}
 
-  omaseek-themes@0.3.2(patch_hash=3f88e770c61a3de53edccf0cdca45a1470ec93651dde489212e657aee5a56a00): {}
+  omaseek-themes@0.3.3: {}
 
   package-manager-detector@1.9.0: {}
 

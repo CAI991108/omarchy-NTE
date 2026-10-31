@@ -106,7 +106,7 @@ cd ~/.dsh/profiles/web && pnpm install
 - **路径是相对的**：两个本地插件用 `link:../../plugins/...`，在仓库内和部署到
   `~/.dsh`。
 - **依赖可复现**：`pnpm-lock.yaml` 锁住 179 个包，安装时用 `--frozen-lockfile`。
-- **一个补丁**：`patches/omaseek-pixel@0.2.1.patch`
+- **一个补丁**：`patches/omaseek-pixel@0.2.2.patch`
   由 `pnpm-workspace.yaml` 的 `patchedDependencies` 应用。
 - **Windows 桌面版同样可用**：profile 名从 `web` 换成 `desktop`、装一次依赖即可 ——
   这些插件都是纯客户端模块，不依赖 Linux 桌面组件。

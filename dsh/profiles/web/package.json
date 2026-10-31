@@ -8,8 +8,8 @@
     "dsh-cost-meter": "^1.9.3",
     "dsh-mattpocock-skills-deck": "1.9.0-beta.4",
     "omaseek-music": "^0.2.6",
-    "omaseek-pixel": "^0.2.1",
-    "omaseek-themes": "^0.3.2"
+    "omaseek-pixel": "^0.2.2",
+    "omaseek-themes": "^0.3.3"
   },
   "dsh": {
     "profile": {

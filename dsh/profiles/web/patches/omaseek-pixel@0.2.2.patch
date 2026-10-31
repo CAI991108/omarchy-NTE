@@ -1,5 +1,5 @@
 diff --git a/lib/client.js b/lib/client.js
-index 8b7432adb978b3e1a04b5095a0773df957b0e5d4..5b42147e4fa65b12a3756fb5bb4f0f1aa5de40ec 100644
+index 33e28c5..82729da 100644
 --- a/lib/client.js
 +++ b/lib/client.js
 @@ -234,16 +234,15 @@ var TITLE_SELECTOR = '[class*="titleGroup"] > span:not([class*="previewBadge"])'
@@ -23,7 +23,7 @@ index 8b7432adb978b3e1a04b5095a0773df957b0e5d4..5b42147e4fa65b12a3756fb5bb4f0f1a
    var start = 350
    var title = TITLE_SELECTOR
    return [
-@@ -831,20 +830,27 @@ function mountField(host, live) {
+@@ -848,20 +847,27 @@ function mountField(host, live, onStale) {
   * prefix lives. The site renders a static "We can fix every" and types only
   * the tail, so deleting can stop at zero; here every phrase is complete, and
   * `shared` stops the deletion at the front the current phrase and the next
@@ -57,7 +57,7 @@ index 8b7432adb978b3e1a04b5095a0773df957b0e5d4..5b42147e4fa65b12a3756fb5bb4f0f1a
  
  /**
   * Run the rotation on one headline span.
-@@ -892,6 +898,20 @@ function mountTyper(el, phrases, reduced) {
+@@ -909,6 +915,20 @@ function mountTyper(el, phrases, reduced) {
      return i
    }
  
@@ -78,7 +78,7 @@ index 8b7432adb978b3e1a04b5095a0773df957b0e5d4..5b42147e4fa65b12a3756fb5bb4f0f1a
    var index = Math.floor(Math.random() * phrases.length)
    var length = 0
    var deleting = false
-@@ -909,7 +929,7 @@ function mountTyper(el, phrases, reduced) {
+@@ -926,7 +946,7 @@ function mountTyper(el, phrases, reduced) {
  
    function step() {
      var phrase = phrases[index]
@@ -87,7 +87,7 @@ index 8b7432adb978b3e1a04b5095a0773df957b0e5d4..5b42147e4fa65b12a3756fb5bb4f0f1a
  
      var next = wait()
      var onward = (index + 1) % phrases.length
-@@ -1193,7 +1213,7 @@ function applyFeature(host) {
+@@ -1218,7 +1238,7 @@ function applyFeature(host) {
          h('div', { className: 'omapixel-line' },
            h('span', { className: 'omapixel-legend' }, 'Headline:'),
            h('span', { className: 'omapixel-note' },
@@ -97,7 +97,7 @@ index 8b7432adb978b3e1a04b5095a0773df957b0e5d4..5b42147e4fa65b12a3756fb5bb4f0f1a
            TYPE_MODES.map(function (mode) {
              return h('button', {
 diff --git a/src/client/pixel.js b/src/client/pixel.js
-index c1da0a458e461612d0efdd2acc1685be79891844..888a6c0ff195b541b9b4c93cfa2df991c2cdb9b1 100644
+index 5d26391..4ee2db1 100644
 --- a/src/client/pixel.js
 +++ b/src/client/pixel.js
 @@ -66,16 +66,15 @@ var TITLE_SELECTOR = '[class*="titleGroup"] > span:not([class*="previewBadge"])'
@@ -121,7 +121,7 @@ index c1da0a458e461612d0efdd2acc1685be79891844..888a6c0ff195b541b9b4c93cfa2df991
    var start = 350
    var title = TITLE_SELECTOR
    return [
-@@ -663,20 +662,27 @@ function mountField(host, live) {
+@@ -680,20 +679,27 @@ function mountField(host, live, onStale) {
   * prefix lives. The site renders a static "We can fix every" and types only
   * the tail, so deleting can stop at zero; here every phrase is complete, and
   * `shared` stops the deletion at the front the current phrase and the next
@@ -155,7 +155,7 @@ index c1da0a458e461612d0efdd2acc1685be79891844..888a6c0ff195b541b9b4c93cfa2df991
  
  /**
   * Run the rotation on one headline span.
-@@ -724,6 +730,20 @@ function mountTyper(el, phrases, reduced) {
+@@ -741,6 +747,20 @@ function mountTyper(el, phrases, reduced) {
      return i
    }
  
@@ -176,7 +176,7 @@ index c1da0a458e461612d0efdd2acc1685be79891844..888a6c0ff195b541b9b4c93cfa2df991
    var index = Math.floor(Math.random() * phrases.length)
    var length = 0
    var deleting = false
-@@ -741,7 +761,7 @@ function mountTyper(el, phrases, reduced) {
+@@ -758,7 +778,7 @@ function mountTyper(el, phrases, reduced) {
  
    function step() {
      var phrase = phrases[index]
@@ -185,7 +185,7 @@ index c1da0a458e461612d0efdd2acc1685be79891844..888a6c0ff195b541b9b4c93cfa2df991
  
      var next = wait()
      var onward = (index + 1) % phrases.length
-@@ -1025,7 +1045,7 @@ export function applyFeature(host) {
+@@ -1050,7 +1070,7 @@ export function applyFeature(host) {
          h('div', { className: 'omapixel-line' },
            h('span', { className: 'omapixel-legend' }, 'Headline:'),
            h('span', { className: 'omapixel-note' },
