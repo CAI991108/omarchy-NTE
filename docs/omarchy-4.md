@@ -96,7 +96,7 @@ omarchy hook install theme-set path/to/hook
 ## 8. 部署后怎么验
 
 ```bash
-./install.sh --dry-run              # 期望：只剩刻意的差异（终端字体、screensaver 文本、git identity）
+./install.sh --dry-run              # 期望：只剩刻意的差异（终端字体、git identity 等）
 hyprctl reload && hyprctl configerrors
 omarchy restart terminal
 omarchy restart shell
