@@ -78,7 +78,8 @@ omarchy hook install theme-set path/to/hook
 
 - 覆盖层仍然是 `~/.config/omarchy/themes/<slug>/`：`omarchy theme set` 先把官方主题复制到 `next-theme`，再把用户目录覆盖上去。`colors.toml`、`shell.toml`、`backgrounds/`、`fcitx5-theme.conf` 这些按名字被消费。
 - 当前主题的产物在 **`~/.local/state/omarchy/current/theme/`**。仓库里唯一跟随主题的软链（btop）指向这里。
-- 壁纸仍从 `~/.config/omarchy/backgrounds/<slug>/` 找。
+- 壁纸仍从 `~/.config/omarchy/backgrounds/<slug>/` 找（用户目录）；主题自带的在 `~/.local/state/omarchy/current/theme/backgrounds/`，切换器两个目录都扫。
+- 当前背景指针在 **`~/.local/state/omarchy/current/background`**（3.8.2 在 `~/.config/omarchy/current/background`）。`install.sh` 的「壁纸链接检查」按这两个路径依次找；只认 3.8 那条会在 4.0 上永远显示「尚不存在」。
 
 ## 6. 三个会咬人的地方
 

@@ -21,7 +21,9 @@ reads `manifests/wallpapers.tsv` from
 [`omarchy-NTE-wallpaper`](https://github.com/CAI991108/omarchy-NTE-wallpaper), verifies
 each sha256, and installs flat into `~/.config/omarchy/backgrounds/<theme>/`. The one
 bundled wallpaper stays in `config/omarchy/backgrounds/catppuccin/` so a fresh install
-still has a working desktop offline.
+still has a working desktop offline. `--wallpapers-only` runs just that part — bundled
+image plus the optional pull — and skips every other deploy step, so wallpapers can be
+refreshed without redeploying the desktop.
 
 ## What belongs in `config/`
 

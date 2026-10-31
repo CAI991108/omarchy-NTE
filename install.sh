@@ -35,9 +35,16 @@
 #   ./install.sh --wallpapers                 # also install wallpapers for the current theme
 #   ./install.sh --wallpapers=<theme>         # also install wallpapers for one theme
 #   ./install.sh --wallpapers=all             # also install every theme in the manifest
+#   ./install.sh --wallpapers-only            # ONLY wallpapers: skip the rest of the deploy
 #
 # --wallpapers is off by default: without it the script never touches the network.
 # `--dry-run --wallpapers` prints the plan but fetches nothing and writes nothing.
+#
+# --wallpapers-only deploys config/omarchy/backgrounds/ (the bundled image) and the
+# optional --wallpapers pull, then stops: no ~/.config snapshot, no other config
+# trees, no symlink rebuild, no systemd units, no fcitx5. That keeps a wallpaper
+# refresh from redeploying the rest of the desktop. Combine it with --wallpapers:
+#   ./install.sh --wallpapers-only --wallpapers
 
 set -euo pipefail
 
@@ -61,6 +68,8 @@ readonly CAPTURED_HOME="${CAPTURED_HOME:-$HOME}"
 # Omarchy's theme.name at install time; otherwise the literal theme name, or "all".
 DRY_RUN=false
 WALLPAPERS=""
+# true = deploy only config/omarchy/backgrounds/ (plus --wallpapers) and stop.
+WALLPAPERS_ONLY=false
 # Set only for a usage-level wallpaper error (unknown theme). Network/checksum
 # failures stay warnings: the config deployment itself already succeeded.
 wallpaper_usage_error=false
@@ -100,13 +109,14 @@ die()   { printf '%sERROR:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 # silently deploy without the wallpapers the user asked for.
 while (( $# > 0 )); do
   case "$1" in
-    --dry-run)      DRY_RUN=true ;;
-    --wallpapers)   WALLPAPERS="__current__" ;;
+    --dry-run)         DRY_RUN=true ;;
+    --wallpapers-only) WALLPAPERS_ONLY=true ;;
+    --wallpapers)      WALLPAPERS="__current__" ;;
     --wallpapers=*)
       WALLPAPERS="${1#--wallpapers=}"
       [[ -z $WALLPAPERS ]] && die "--wallpapers= 后面要跟主题名或 all"
       ;;
-    *)              die "未知参数: $1（支持 --dry-run 和 --wallpapers[=<theme>|all]）" ;;
+    *)                 die "未知参数: $1（支持 --dry-run、--wallpapers[=<theme>|all]、--wallpapers-only）" ;;
   esac
   shift
 done
@@ -174,6 +184,7 @@ info "  源:     $SRC_CONFIG/"
 info "  目标:   $DEST_CONFIG/"
 info "  捕获时的家目录: $CAPTURED_HOME  →  当前: $HOME"
 $DRY_RUN && warn "DRY-RUN 模式：只显示将要做的改动，不会写入任何文件。"
+$WALLPAPERS_ONLY && warn "仅壁纸模式：只动 ~/.config/omarchy/backgrounds/，其它配置树、systemd、fcitx5 都不会部署。"
 
 if [[ $CAPTURED_HOME != "$HOME" ]]; then
   warn "家目录不同，所有路径引用会被改写为 $HOME"
@@ -184,7 +195,12 @@ STAMP="$(date +%s)"
 SNAPSHOT="$HOME/.config.bak.omarchy-NTE.$STAMP"
 
 step "0. 目标目录快照"
-if [[ -d $DEST_CONFIG ]]; then
+if $WALLPAPERS_ONLY; then
+  # A wallpapers-only run overwrites individual images, and each one is backed up
+  # by backup_file before it is touched. Copying all of ~/.config for that is
+  # noise, and keeping the run small is the point of the flag.
+  dim "  --wallpapers-only：跳过整树快照（被覆盖的壁纸仍逐个 backup_file）"
+elif [[ -d $DEST_CONFIG ]]; then
   info "  将把 $DEST_CONFIG 完整复制到 $SNAPSHOT"
   info "  （只复制小文件；体积大的浏览器/编辑器 profile 会跳过）"
   if ! $DRY_RUN; then
@@ -296,15 +312,21 @@ deploy_executable_file() {
 }
 
 # Deploy one tree, reporting per tree so a failure is attributable to a row.
+# `only` limits the walk to files whose path relative to src_root starts with it;
+# paths stay relative to the tree root (not to the filter), so per-file mappings
+# such as PATH_OVERRIDES keep working when only a subtree is deployed.
 deploy_tree() {
-  local src_root="$1" dest_root="$2" handler="$3"
-  local src rel deployed=0 skipped=0
+  local src_root="$1" dest_root="$2" handler="$3" only="${4:-}"
+  local src rel deployed=0 skipped=0 scope
+  scope="$(basename "$src_root")/"
+  [[ -n $only ]] && scope+="$only"
   while IFS= read -r -d '' src; do
     # Symlinks are rebuilt in their own step; `.gitkeep` placeholders only exist
     # so git keeps otherwise-empty directories and are never deployed.
     [[ -L $src ]] && continue
     [[ $(basename "$src") == ".gitkeep" ]] && continue
     rel="${src#"$src_root"/}"
+    [[ -n $only && $rel != "$only"* ]] && continue
     if "$handler" "$src" "$rel"; then
       ((deployed++)) || true
     else
@@ -313,49 +335,70 @@ deploy_tree() {
   done < <(find "$src_root" -type f -print0 | sort -z)
 
   if $DRY_RUN; then
-    ok "$(basename "$src_root")/ → ${dest_root/#$HOME/\~}/：$deployed 个待部署，$skipped 个已是最新"
+    ok "$scope → ${dest_root/#$HOME/\~}/：$deployed 个待部署，$skipped 个已是最新"
   else
-    ok "$(basename "$src_root")/ → ${dest_root/#$HOME/\~}/：已部署 $deployed 个，$skipped 个已是最新"
+    ok "$scope → ${dest_root/#$HOME/\~}/：已部署 $deployed 个，$skipped 个已是最新"
   fi
   total_deployed=$((total_deployed + deployed))
   total_skipped=$((total_skipped + skipped))
 }
 
-step "1. 部署配置树"
 total_deployed=0 total_skipped=0
-for row in "${TREES[@]}"; do
-  IFS='|' read -r tree_src tree_dest tree_handler <<<"$row"
-  if [[ ! -d $REPO_DIR/$tree_src ]]; then
-    dim "  未找到 $tree_src/，跳过"
-    continue
-  fi
-  deploy_tree "$REPO_DIR/$tree_src" "$tree_dest" "$tree_handler"
-done
+if $WALLPAPERS_ONLY; then
+  step "1. 部署自带壁纸"
+  # Only the background tree. The bundled image still has to land: it is what
+  # makes a fresh install show a desktop offline, and a wallpapers-only rerun has
+  # to be able to restore it. Paths stay relative to config/ so PATH_OVERRIDES
+  # still deploys the spaced filename.
+  deploy_tree "$SRC_CONFIG" "$DEST_CONFIG" deploy_config_file "omarchy/backgrounds/"
+else
+  step "1. 部署配置树"
+  for row in "${TREES[@]}"; do
+    IFS='|' read -r tree_src tree_dest tree_handler <<<"$row"
+    if [[ ! -d $REPO_DIR/$tree_src ]]; then
+      dim "  未找到 $tree_src/，跳过"
+      continue
+    fi
+    deploy_tree "$REPO_DIR/$tree_src" "$tree_dest" "$tree_handler"
+  done
+fi
 
-if [[ -d $HOME/.dsh/profiles/web ]] && ! $DRY_RUN && (( total_deployed > 0 )); then
+if [[ -d $HOME/.dsh/profiles/web ]] && ! $DRY_RUN && ! $WALLPAPERS_ONLY && (( total_deployed > 0 )); then
   info "  DSH 依赖还没安装。要让配置生效，执行："
   info "    cd ~/.dsh/profiles/web && pnpm install"
 fi
 
 # ── 1b. wallpaper sanity check ────────────────────────────────────────────────
-# Omarchy regenerates omarchy/current/background on every theme change and points
-# it at a file under omarchy/backgrounds/<theme>/. That filename contains a space,
-# which is why the repo stores a hyphenated copy and PATH_OVERRIDES deploys it back
-# under the spaced name. Verify the link actually resolves instead of trusting it.
+# Omarchy regenerates the current-background pointer on every theme change and
+# points it at an image somewhere under a backgrounds/ directory. The filename may
+# contain a space, which is why the repo stores a hyphenated copy and
+# PATH_OVERRIDES deploys it back under the spaced name. Verify the link actually
+# resolves instead of trusting it.
+#
+# 4.0 moved the pointer to ~/.local/state/omarchy/current/background; 3.8.2 kept
+# it in ~/.config/omarchy/current/background. Check both, 4.0 first: probing only
+# the old path made a healthy 4.0 machine answer "not created yet" forever.
 step "1b. 壁纸链接检查"
-bg_link="$DEST_CONFIG/omarchy/current/background"
-if [[ -L $bg_link ]]; then
-  bg_target="$(readlink "$bg_link")"
-  if [[ -e $bg_target ]]; then
-    ok "壁纸链接有效: ${bg_target/#$HOME/\~}"
-  else
-    warn "壁纸链接指向的文件不存在: $bg_target"
-    info "  修复：omarchy theme set \"\$(omarchy theme current)\""
+bg_checked=0
+for bg_link in \
+  "$HOME/.local/state/omarchy/current/background" \
+  "$DEST_CONFIG/omarchy/current/background"; do
+  if [[ -L $bg_link ]]; then
+    bg_checked=$((bg_checked + 1))
+    bg_target="$(readlink "$bg_link")"
+    if [[ -e $bg_target ]]; then
+      ok "壁纸链接有效: ${bg_link/#$HOME/\~} → ${bg_target/#$HOME/\~}"
+    else
+      warn "壁纸链接指向的文件不存在: ${bg_target/#$HOME/\~}"
+      info "  修复：omarchy theme set \"\$(omarchy theme current)\""
+    fi
+  elif [[ -e $bg_link ]]; then
+    bg_checked=$((bg_checked + 1))
+    dim "  ${bg_link/#$HOME/\~} 不是符号链接，跳过检查"
   fi
-elif [[ -e $bg_link ]]; then
-  dim "  background 不是符号链接，跳过检查"
-else
-  dim "  omarchy/current/background 尚不存在（首次换主题后 Omarchy 会生成）"
+done
+if (( bg_checked == 0 )); then
+  dim "  当前壁纸指针尚不存在（首次换主题后 Omarchy 会生成）"
 fi
 
 # ── 1c. extra wallpapers from omarchy-NTE-wallpaper (optional) ────────────────
@@ -395,8 +438,13 @@ if [[ -n $WALLPAPERS ]]; then
 
       wall_installed=0 wall_skipped=0 wall_failed=0 wall_matched=0
 
-      if ! curl -fsSL --max-time 30 "$WALLPAPERS_BASE/manifests/wallpapers.tsv" \
-           -o "$wallpaper_tmp/wallpapers.tsv"; then
+      # GitHub's raw host drops connections often enough on some networks that a
+      # single attempt loses the whole run (the first real run here failed 4 of 5
+      # connections). Retrying is still only a warning path: when every attempt
+      # fails, install.sh finishes and says to rerun.
+      if ! curl -fsSL --connect-timeout 8 --max-time 20 \
+           --retry 3 --retry-delay 1 --retry-all-errors \
+           "$WALLPAPERS_BASE/manifests/wallpapers.tsv" -o "$wallpaper_tmp/wallpapers.tsv"; then
         warn "清单下载失败，跳过额外壁纸: $WALLPAPERS_BASE/manifests/wallpapers.tsv"
         wall_failed=$((wall_failed + 1))
       else
@@ -424,7 +472,9 @@ if [[ -n $WALLPAPERS ]]; then
           fi
 
           tmpfile="$wallpaper_tmp/$(basename "$w_file")"
-          if ! curl -fsSL --max-time 120 "$WALLPAPERS_BASE/$w_file" -o "$tmpfile"; then
+          if ! curl -fsSL --connect-timeout 8 --max-time 90 \
+               --retry 2 --retry-delay 2 --retry-all-errors \
+               "$WALLPAPERS_BASE/$w_file" -o "$tmpfile"; then
             warn "下载失败: $w_file"
             wall_failed=$((wall_failed + 1))
             continue
@@ -463,6 +513,31 @@ if [[ -n $WALLPAPERS ]]; then
       fi
     fi
   fi
+fi
+
+# ── wallpapers-only stops here ────────────────────────────────────────────────
+# Symlinks, placeholder directories, systemd units and fcitx5 belong to a full
+# deployment; --wallpapers-only exists to refresh wallpapers without redeploying
+# the desktop, so the rest of the script is deliberately not this run's business.
+if $WALLPAPERS_ONLY; then
+  step "完成（仅壁纸）"
+  if $DRY_RUN; then
+    info "  这是 DRY-RUN：没有写入、没有联网。"
+    info "  去掉 --dry-run 即可真正拉取壁纸。"
+  else
+    for bg_dir in "$DEST_CONFIG"/omarchy/backgrounds/*/; do
+      [[ -d $bg_dir ]] || continue
+      bg_count="$(find "$bg_dir" -maxdepth 1 -type f | wc -l)"
+      dim "  ${bg_dir/#$HOME/\~}：$bg_count 张"
+    done
+    info "  切换壁纸：Super+Ctrl+W（Omarchy 4.x）"
+  fi
+  dim "  其它配置树、符号链接、systemd 单元、fcitx5 未改动。"
+  if $wallpaper_usage_error; then
+    printf '%sERROR:%s 请求的壁纸主题不存在（本模式没有部署其它配置）。\n' "$C_RED" "$C_RESET" >&2
+    exit 1
+  fi
+  exit 0
 fi
 
 # ── 2. rebuild the theme-following symlinks ───────────────────────────────────
