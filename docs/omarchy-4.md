@@ -2,6 +2,8 @@
 
 这份文档记录 `main` 为什么长成现在这样。它面向两件事：**(a)** 下次在这台机器上改配置时，判断一个文件该不该进仓库；**(b)** 下一代 Omarchy 断代时，照着重做一遍抓取。
 
+> **渠道前缀**：本机跑的是 `omarchy-dev` 的 `quattro` 开发分支（写作时 `4.0.0.r7442.gbda3aaf-1`），不是发布版。截至 2026-10-31，最新发布是 `v4.0.6`（2026-10-19）。两者已经 diverge，凡是只在 `quattro` 上的行为，下文都会显式标注。**别把「开发分支上成立」当成「发布版也成立」。**
+
 配套决定见 [`docs/adr/0002-omarchy-4-cut.md`](adr/0002-omarchy-4-cut.md)。
 
 ## 1. 4.0 换了什么
@@ -14,7 +16,7 @@
 | walker | Quickshell menu（`SUPER + SPACE` = `{ menu = "root" }`）+ `extensions/omarchy-menu.jsonc` |
 | hypridle / hyprlock | **应用已删**，空闲行为在 `shell.json` 的 `idle.{screensaver,lock}` |
 | `~/.config/omarchy/current/` | `~/.local/state/omarchy/current/`（主题、背景指针都在这里） |
-| fcitx5 主题靠自定义钩子 | `omarchy-theme-set` 内置 `omarchy-theme-set-fcitx5`，生成 `~/.local/share/fcitx5/themes/omarchy` |
+| fcitx5 主题靠自定义钩子 | `quattro` 上由 `omarchy-theme-set-fcitx5` 内置生成 `~/.local/share/fcitx5/themes/omarchy`；**`v4.0.6` 正式版里这个脚本仍是 404**，发布版用户仍需自己的做法 |
 | 官方 systemd 单元在 `~/.config/systemd/user` | 装在 `/usr/lib/systemd/user`；`~/.config/...` 只放用户自己的单元和 `.wants` 链接 |
 
 `hyprsunset.conf` 和 `xdph.conf` 仍然是 `.conf`，但它们由 hyprsunset / portal 读，不归 Hyprland。Hyprland 0.57 的 `hyprland.log` 里能看到实际入口：
@@ -41,7 +43,7 @@ git ls-tree -r --name-only omarchy-3.8.2 -- config | \
     [[ -e $HOME/${f#config/} ]] && echo present || echo MISSING; done | grep MISSING
 ```
 
-第 3 步这一步在 4.0 抓取时抓出了两样光看 diff 会漏的东西：终端里被重置掉的字体偏好（`CaskaydiaMono`），以及 `fontconfig/fonts.conf`（模板没有、机器上也没有，但仓库里它是刻意的字体替换）。
+第 3 步这一步在 4.0 抓取时抓出了两样光看 diff 会漏的东西：终端字体的不一致（机器上是 4.0 默认的 `JetBrainsMono`，仓库里是 3.8.2 时的 `CaskaydiaMono`，**原因未查清**——本机没留下 `omarchy-upgrade-to-quattro` 的迁移痕迹），以及 `fontconfig/fonts.conf`（模板没有、机器上也没有，但仓库里它是刻意的字体替换）。
 
 **不要抓**：`git/config`（live 里有 `[user]` / `[credential]`，公开仓库会泄露身份；仓库版是刻意剥掉这两段的）、`monitors.lua`（分辨率/缩放是机器属性）、模板自带的 `hyprland.lua`/`input.lua`/`looknfeel.lua`/`autostart.lua`、`extensions/omarchy-menu.jsonc`（与默认一致时）。
 
@@ -70,7 +72,7 @@ git ls-tree -r --name-only omarchy-3.8.2 -- config | \
 omarchy hook install theme-set path/to/hook
 ```
 
-`theme-set` 的 fcitx5 上色是内置的，所以本仓库不再自带任何钩子。
+`theme-set` 的 fcitx5 上色在 `quattro` 上已经内置（发布版 `v4.0.6` 还没有），所以本仓库不再自带任何钩子；用正式版的机器需要自己上色。
 
 ## 5. 主题与状态路径
 
@@ -81,7 +83,7 @@ omarchy hook install theme-set path/to/hook
 ## 6. 三个会咬人的地方
 
 1. **`omarchy-refresh-config` 仍然是 `cp -f`，会穿透软链**（4.0 的 `/usr/bin/omarchy-refresh-config:31-33` 逐行确认过：没有 `--remove-destination`、没有 `-P`）。所以本仓库部署的是**副本**而不是软链——否则一次 refresh 就把仓库里的文件改掉。
-2. **`omarchy refresh shell` 会无备份地丢 bar 定制**：`omarchy-bar defaults` 自己 `mktemp` + `mv` 写 `shell.json`，不留 `.bak`。要重置 bar 之前先手动备份 `shell.json`。
+2. **`omarchy refresh shell` 会重置 bar 布局**：它先 `omarchy-refresh-config omarchy/shell.json`（这一步**会**留下 `shell.json.bak.<epoch>`），再 `omarchy-bar defaults` 把 `shell.json` 重写掉。所以定制**可以**从备份里捞回来，但别把「有备份」理解成「什么都没丢」。
 3. **`omarchy refresh hyprland` 对 `~/.local/state/omarchy/toggles/flags.lua` 不备份**（其余七个文件有 `.bak.<epoch>`）。
 
 ## 7. DSH 静默启动
