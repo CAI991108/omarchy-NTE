@@ -1,6 +1,6 @@
 # The repo cuts at 3.8.2 → 4.0: `main` is 4.x only, `tag omarchy-3.8.2` is the past
 
-**Status:** accepted (2026-10-31)
+**Status:** accepted (2026-10-31) — **superseded in part by [ADR-0003](0003-keep-a-3-8-line.md)**: the 3.8 line is a long-lived branch now, not only a tag.
 
 Omarchy 4.0 is not a version bump of 3.8.2: Hyprland config became Lua, `waybar`/`mako`/
 `walker`/`hypridle` were deleted in favour of one Quickshell process, theme state moved

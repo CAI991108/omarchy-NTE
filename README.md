@@ -148,7 +148,7 @@ cd ~/.dsh/profiles/web && pnpm install
 
 ## 快速一键安装 —— **Omarchy** 4.0
 
-> 3.8.2 的完整配置在 tag [`omarchy-3.8.2`](https://github.com/CAI991108/omarchy-NTE/tree/omarchy-3.8.2)；迁移说明见 [`docs/omarchy-4.md`](docs/omarchy-4.md)。
+> 3.8.2 的配置长期维护在分支 [`legacy/3.8`](https://github.com/CAI991108/omarchy-NTE/tree/legacy/3.8)（tag `omarchy-3.8.2` 是断代当天的快照）；迁移说明见 [`docs/omarchy-4.md`](docs/omarchy-4.md)。
 
 ### 1. 克隆
 
