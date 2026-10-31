@@ -197,6 +197,8 @@ omarchy pkg aur add catppuccin-fcitx5-git
   读 `manifests/wallpapers.tsv`，逐张校验 sha256 后扁平安装到
   `~/.config/omarchy/backgrounds/<theme>/`。不带该参数时完全不联网；
   `--dry-run` 也不会联网。主仓库自带的壁纸按 sha 识别并跳过。
+- **只拉壁纸**：`--wallpapers-only` 只做自带壁纸 + `--wallpapers` 的拉取，跳过整树快照、
+  其它配置树、符号链接、systemd 和 fcitx5；被覆盖的壁纸仍然逐个备份。
 - **保留可执行位**：钩子必须是可执行的，否则 Omarchy 不会运行它。
 - **不碰 sudo**：只写 `$HOME` 里的文件。
 
@@ -223,11 +225,16 @@ systemctl --user restart app-org.fcitx.Fcitx5@autostart.service
 ./install.sh --wallpapers=catppuccin       # 指定主题
 ./install.sh --wallpapers=all              # 清单里的所有主题
 ./install.sh --dry-run --wallpapers=all    # 只打印计划，不联网、不写盘
+./install.sh --wallpapers-only --wallpapers  # 只拉壁纸，跳过其它所有部署步骤
 ```
+
+`--wallpapers-only` 只部署 `config/omarchy/backgrounds/`（自带那张）并可选拉取，跳过整树快照、
+其它配置树、符号链接、systemd 单元和 fcitx5。换壁纸时不必重跑整次部署，也不会动到别的配置。
 
 安装器读 `manifests/wallpapers.tsv`（`WALLPAPERS_BASE` 可覆盖下载前缀，默认 GitHub raw），
 逐张 sha256 校验后扁平放进 `~/.config/omarchy/backgrounds/<theme>/`。
-网络或校验失败只警告，不会中断配置部署；装完按 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>W</kbd> 切换（3.8.2 下是
+下载带重试（GitHub raw 在国内网络下会丢连接）；重试后仍失败只警告，不会中断配置部署。
+装完按 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>W</kbd> 切换（3.8.2 下是
 <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>Space</kbd>）。
 
 ---
@@ -239,7 +246,7 @@ systemctl --user restart app-org.fcitx.Fcitx5@autostart.service
 
 ```
 omarchy-NTE/
-├── install.sh                       # 复制式部署：先备份、幂等、支持 --dry-run / --wallpapers
+├── install.sh                       # 复制式部署：先备份、幂等、支持 --dry-run / --wallpapers / --wallpapers-only
 ├── assets/                          # README 用的压缩预览图（assets/dsh/ 是 DSH 截图）
 ├── config/                          # 镜像 ~/.config（只含用户改动）
 │   ├── hypr/ alacritty/ ghostty/ kitty/ btop/
