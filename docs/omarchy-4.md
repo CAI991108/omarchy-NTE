@@ -45,7 +45,7 @@ git ls-tree -r --name-only omarchy-3.8.2 -- config | \
     [[ -e $HOME/${f#config/} ]] && echo present || echo MISSING; done | grep MISSING
 ```
 
-第 3 步这一步在 4.0 抓取时抓出了两样光看 diff 会漏的东西：终端字体的不一致（机器上是 4.0 默认的 `JetBrainsMono`，仓库里是 3.8.2 时的 `CaskaydiaMono`，**原因未查清**——本机没留下 `omarchy-upgrade-to-quattro` 的迁移痕迹），以及 `fontconfig/fonts.conf`（模板没有、机器上也没有，但仓库里它是刻意的字体替换）。
+第 3 步这一步在 4.0 抓取时抓出了两样光看 diff 会漏的东西：终端字体的不一致（机器上是 4.0 默认的 `JetBrainsMono`，仓库里是 3.8.2 时的 `CaskaydiaMono`，**原因未查清**——本机没留下 `omarchy-upgrade-to-quattro` 的迁移痕迹；仓库侧已在票 #5 改回 `JetBrainsMono Nerd Font`，别再抓回去），以及 `fontconfig/fonts.conf`（模板没有、机器上也没有，但仓库里它是刻意的字体替换——按 2026-10-31 的决定不动，留到下次抓取时裁决）。
 
 **不要抓**：`git/config`（live 里有 `[user]` / `[credential]`，公开仓库会泄露身份；仓库版是刻意剥掉这两段的）、`monitors.lua`（分辨率/缩放是机器属性）、模板自带的 `hyprland.lua`/`input.lua`/`looknfeel.lua`/`autostart.lua`、`extensions/omarchy-menu.jsonc`（与默认一致时）。
 
@@ -101,7 +101,7 @@ omarchy hook install theme-set path/to/hook
 ## 8. 部署后怎么验
 
 ```bash
-./install.sh --dry-run              # 期望：只剩刻意的差异（终端字体、git identity 等）
+./install.sh --dry-run              # 期望：只剩刻意的差异（git identity、终端的 OSC52/按键等）
 hyprctl reload && hyprctl configerrors
 omarchy restart terminal
 omarchy restart shell
