@@ -11,8 +11,10 @@
       read / read_image   -> is_write = false
 
 投递
-    直接调用本机 ~/.wakatime/wakatime-cli，复用 ~/.wakatime.cfg 里的 api_key，
-    因此和 nvim / vscode 共用同一套离线队列、失败重试与限流，不需要第二份凭证。
+    复用 ~/.wakatime.cfg 里的 api_key（和 nvim / vscode 共用一份凭证），按 key 的形状分流：
+      UUID（或 waka_<uuid>） -> 转交 ~/.wakatime/wakatime-cli，沿用它的离线队列、重试与限流
+      waka_tok_…             -> 直连 api.wakatime.com（OAuth 令牌；CLI 2.28 只认 UUID 形式，发不出去）
+    直连失败不推进进度，下一轮原样重试，效果等价于 CLI 的离线队列。
 
 用法
     dsh-wakatime sync              增量同步（默认只处理今天的会话）
@@ -39,6 +41,8 @@ HOME = Path.home()
 DSH_HOME = Path(os.environ.get("DSH_HOME", HOME / ".dsh"))
 SESSIONS_DIR = DSH_HOME / "sessions"
 WAKATIME_CLI = Path(os.environ.get("WAKATIME_CLI", HOME / ".wakatime" / "wakatime-cli"))
+WAKATIME_CFG = HOME / ".wakatime.cfg"
+WAKATIME_API = os.environ.get("WAKATIME_API", "https://api.wakatime.com/api/v1")
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local" / "state")) / "dsh-wakatime"
 STATE_FILE = STATE_DIR / "state.json"
 LOCK_FILE = STATE_DIR / "lock"
@@ -356,13 +360,79 @@ def send_batch(batch: list[dict], category: str) -> int:
     return proc.returncode
 
 
+def read_api_key() -> str | None:
+    """取 ~/.wakatime.cfg 里的 api_key；交给 CLI 还是直连，由调用方按形状决定。"""
+    import configparser
+
+    try:
+        parser = configparser.ConfigParser()
+        parser.read(WAKATIME_CFG)
+    except (OSError, configparser.Error):
+        return None
+    key = parser.get("settings", "api_key", fallback="") or parser.get("settings", "apikey", fallback="")
+    return key.strip() or None
+
+
+def is_oauth_token(key: str) -> bool:
+    """waka_tok_… 是 WakaTime 新的 OAuth 访问令牌；wakatime-cli 至今只认 UUID 形式。"""
+    return key.startswith("waka_tok_")
+
+
+def heartbeat_payload(hb: dict, category: str) -> dict:
+    item = {
+        "entity": hb["entity"],
+        "type": "file",
+        "time": hb["time"],
+        "category": category,
+        "user_agent": USER_AGENT,
+    }
+    if hb["is_write"]:
+        item["is_write"] = True
+    project = project_for(hb)
+    if project:
+        item["project"] = project
+    return item
+
+
+def send_batch_http(batch: list[dict], category: str, api_key: str) -> int:
+    """直连 POST /heartbeats.bulk。失败返回非 0，调用方据此不推进进度。"""
+    import urllib.error
+    import urllib.request
+
+    body = json.dumps([heartbeat_payload(hb, category) for hb in batch]).encode("utf-8")
+    req = urllib.request.Request(WAKATIME_API + "/users/current/heartbeats.bulk", data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("User-Agent", USER_AGENT)
+    req.add_header("Authorization", f"Bearer {api_key}")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            payload = json.loads(resp.read().decode("utf-8", "replace") or "{}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace").strip()[:300]
+        sys.stderr.write(f"wakatime api failed: http={exc.code} {detail}\n")
+        return 1
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        sys.stderr.write(f"wakatime api failed: {exc}\n")
+        return 1
+
+    for group in payload.get("responses") or []:
+        for result in group if isinstance(group, list) else [group]:
+            errors = result.get("errors") if isinstance(result, dict) else None
+            if errors:
+                sys.stderr.write(f"wakatime rejected a heartbeat: {errors}\n")
+                return 1
+    return 0
+
+
 def cmd_sync(args: argparse.Namespace) -> int:
     # 明确不使用 ai coding：DSH 的记账按普通 coding 计。
     if args.category.strip().lower() == "ai coding":
         sys.stderr.write('已禁用 "ai coding" 分类，请使用默认的 coding。\n')
         return 2
-    # dry-run 不调用 CLI，没有它也应该能预览（新机器上先验证解析再去认证）。
-    if not WAKATIME_CLI.exists() and not args.dry_run:
+    api_key = read_api_key()
+    use_api = bool(api_key and is_oauth_token(api_key))
+    # dry-run 不投递，缺 CLI 也应该能预览（新机器上先验证解析再去认证）。
+    if not use_api and not WAKATIME_CLI.exists() and not args.dry_run:
         sys.stderr.write(f"找不到 wakatime-cli: {WAKATIME_CLI}\n")
         return 1
     if shutil.which("zstd") is None:
@@ -411,7 +481,11 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
         failures = 0
         for start in range(0, len(heartbeats), BATCH_SIZE):
-            rc = send_batch(heartbeats[start : start + BATCH_SIZE], args.category)
+            batch = heartbeats[start : start + BATCH_SIZE]
+            if use_api:
+                rc = send_batch_http(batch, args.category, api_key)
+            else:
+                rc = send_batch(batch, args.category)
             if rc != 0:
                 failures += 1
                 break
@@ -419,15 +493,17 @@ def cmd_sync(args: argparse.Namespace) -> int:
         if failures:
             return 1
 
-        # 兜底：把之前被限流/断网压在队列里的心跳（含其它编辑器留下的）一次冲刷掉。
-        flush = subprocess.run(
-            [str(WAKATIME_CLI), "--sync-offline-activity", "0"],
-            text=True,
-            capture_output=True,
-            timeout=300,
-        )
-        if flush.returncode != 0:
-            sys.stderr.write(f"offline flush failed rc={flush.returncode}\n{flush.stderr}\n")
+        if not use_api:
+            # 兜底：把之前被限流/断网压在队列里的心跳（含其它编辑器留下的）一次冲刷掉。
+            # 令牌直连没有 CLI 的队列，进度不推进就是它的重试队列，所以只在 CLI 路径做。
+            flush = subprocess.run(
+                [str(WAKATIME_CLI), "--sync-offline-activity", "0"],
+                text=True,
+                capture_output=True,
+                timeout=300,
+            )
+            if flush.returncode != 0:
+                sys.stderr.write(f"offline flush failed rc={flush.returncode}\n{flush.stderr}\n")
 
         for key, seq in progressed.items():
             state["sessions"][key] = {"seq": seq, "synced_at": int(time.time())}
@@ -460,9 +536,28 @@ def probe_cli_key() -> tuple[bool, str]:
     )
 
 
+def probe_token_key(api_key: str) -> tuple[bool, str]:
+    """令牌直连：GET /users/current 验认证。写权限只能靠真发一次心跳才知道。"""
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(WAKATIME_API + "/users/current")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    req.add_header("User-Agent", USER_AGENT)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8", "replace") or "{}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace").strip()[:200]
+        return False, f"api.wakatime.com 返回 http={exc.code} {detail}"
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return False, f"连不上 api.wakatime.com：{exc}"
+    email = (payload.get("data") or {}).get("email") or "?"
+    return True, email
+
+
 def cmd_doctor(_: argparse.Namespace) -> int:
     """换机器后自检：依赖、CLI、密钥、会话格式、状态目录。"""
-    import configparser
 
     passed = True
 
@@ -489,16 +584,17 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001
             check(False, "CLI 可执行", str(exc))
 
-    cfg = HOME / ".wakatime.cfg"
-    check(cfg.is_file(), f"配置文件 {cfg}", "运行一次 WakaTime 插件并填 API key，会生成该文件")
-    if cfg.is_file():
-        parser = configparser.ConfigParser()
-        parser.read(cfg)
-        key = parser.get("settings", "api_key", fallback="") or parser.get("settings", "apikey", fallback="")
+    check(WAKATIME_CFG.is_file(), f"配置文件 {WAKATIME_CFG}", "运行一次 WakaTime 插件并填 API key，会生成该文件")
+    key = read_api_key()
+    if WAKATIME_CFG.is_file():
         check(bool(key), "api_key 已配置", ':WakaTimeApiKey 或 wakatime-cli --config-write api_key "..."')
-        if key and WAKATIME_CLI.is_file():
-            ok, note = probe_cli_key()
-            check(ok, "key 能真正发到 WakaTime（wakatime-cli --today）", note)
+
+    if key and is_oauth_token(key):
+        ok, note = probe_token_key(key)
+        check(ok, f"WakaToken 认证通过（{note}）" if ok else "WakaToken 认证", "" if ok else note)
+    elif key and WAKATIME_CLI.is_file():
+        ok, note = probe_cli_key()
+        check(ok, "key 能真正发到 WakaTime（wakatime-cli --today）", note)
 
     files = session_files()
     if files:
