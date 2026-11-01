@@ -1,0 +1,445 @@
+#!/usr/bin/env python3
+"""dsh-doctor — 一条命令回答「这套 DSH profile 在当前离线版本上成立吗」。
+
+体检对象是 `~/.dsh`（`$DSH_HOME`），**只读**：本脚本不写文件、不动 profile、不碰
+node_modules。唯一会碰到磁盘的是被调用的 dsh 自己——`--dump-config` 每次都会把 profile
+根 `cordis.yml` 重写成固定桩（内容与本仓库 `dsh/profiles/web/cordis.yml` 逐字节相同，
+每次启动也一样）。dsh 一升级，profile 可能悄悄失效（bundle 解析不到、patch 的 id 消失、
+本地插件没加载），而这类失效**不会让 dsh 报错**——`--dump-config` 与正常启动的退出码
+都是 0，坏消息只出现在 stderr 的告警行里。所以本脚本读 stderr，而不是看退出码。
+
+五项，逐项 ✓/✗：
+  1. profile 组合    `dsh --profile <p> --dump-config` 能组合完，且没有
+                     `skipping profile bundle`——解析不到或与当前 dsh 不兼容的 bundle
+                     都在这一步被点名。
+  2. 本地插件链接    `package.json` 里 `link:` 依赖（`@local/*`）在 `node_modules`
+                     里存在、可解析，且各自声明的 bundle patch 文件都在。
+  3. patch 落点      `cordis.patch.yml` 的每条 patch 都命中目标 id、name 也不错位；
+                     dsh 对打歪的 patch 同样只告警不报错。
+  4. 第三方 bundle   依赖里的第三方包都在 `node_modules` 里，版本与 `pnpm-lock.yaml` 一致。
+  5. dsh 兼容性      当前 dsh 会不会把某个第三方 bundle 判成不兼容（判了就静默跳过）。
+                     判定交给 dsh 自己（就是第 1 项的告警），这里只做汇总和点名；`-v`
+                     展开每个 bundle 的版本与 `engines.dsh` / dsh peer 范围。
+
+用法
+    dsh-doctor                 体检 web profile
+    dsh-doctor --profile tui   体检另一个 profile
+    dsh-doctor -v              展开每个 bundle 的版本与 dsh 要求
+
+退出码 0 = 全绿；1 = 有红项（也含 dsh 不在 PATH、profile 不存在这类前提失败）。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import unicodedata
+from pathlib import Path
+
+HOME = Path.home()
+DSH_HOME = Path(os.environ.get("DSH_HOME") or HOME / ".dsh")
+TIMEOUT = 120
+
+GREEN, RED, DIM = "32", "31", "2"
+COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+
+# dsh 的告警长这样（来源：@deepseek-ai/dsh-app-boot 的 reportSkippedBundles 与
+# entry-patch 的 warn 回调；binName 固定为 dsh）：
+#   dsh: skipping profile bundle "<name>": <reason>
+#   dsh: [<patch file>] patch: entry "<id>" not found
+#   dsh: [<patch file>] patch: name mismatch for "<id>" (...), skipping
+SKIP_RE = re.compile(r'^dsh: skipping profile bundle "(?P<name>[^"]+)": (?P<reason>.*)$')
+PATCH_RE = re.compile(r"^dsh: \[(?P<file>[^\]]*)\] (?P<message>patch.*)$")
+PATCH_ENTRY_RE = re.compile(r"^-\s+id:\s*\S")
+# 兼容性告警把「怎么修」也写在同一行，红项里只留前一段。
+COMPAT_CUT = " Running it may cause crashes"
+
+
+def paint(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if COLOR else text
+
+
+def cell_width(text: str) -> int:
+    """按终端显示宽度算（中文与全角按 2 格），用来对齐分项。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
+def fail(message: str):
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def read_json(path: Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def run(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        argv,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=TIMEOUT,
+    )
+
+
+# ── 五项检查 ─────────────────────────────────────────────────────────────────
+
+
+class Item:
+    """一项体检结果：一句话结论 + 红/verbose 时才展开的明细行。"""
+
+    def __init__(self, label: str, ok: bool, summary: str, details=()):
+        self.label = label
+        self.ok = ok
+        self.summary = summary
+        self.details = list(details)
+
+
+def composition_stderr(done: subprocess.CompletedProcess[str] | None) -> list[str]:
+    return done.stderr.splitlines() if done is not None else []
+
+
+def error_lines(stderr: str) -> list[str]:
+    """从失败的 stderr 里挑出人要看的那几行，丢掉 Node 的栈帧与源码指针。"""
+    noise = ("file://", "at ", "Node.js v", "^", "throw new Error")
+    lines = [line.strip() for line in stderr.splitlines()
+             if line.strip() and not line.strip().startswith(noise)]
+    errors = [line.removeprefix("Error: ") for line in lines if line.startswith("Error: ")]
+    picked = errors or lines
+    return picked[:4] or ["（stderr 里没有可读的错误行）"]
+
+
+def shorten(path: Path) -> str:
+    """家目录下的路径写成 ~/…，别在输出里铺一长条绝对路径。"""
+    try:
+        return f"~/{path.relative_to(HOME)}"
+    except ValueError:
+        return str(path)
+
+
+def check_composition(done: subprocess.CompletedProcess[str] | None,
+                      bundles: list[str]) -> Item:
+    label = "profile 组合"
+    if done is None:
+        return Item(label, False, f"`dsh --dump-config` 超过 {TIMEOUT}s 没返回")
+    if done.returncode != 0:
+        return Item(label, False, f"`dsh --dump-config` 退出码 {done.returncode}",
+                    error_lines(done.stderr))
+    skipped = [SKIP_RE.match(line) for line in composition_stderr(done)]
+    skipped = [match for match in skipped if match]
+    other = [
+        line.strip() for line in composition_stderr(done)
+        if line.strip() and not SKIP_RE.match(line) and not PATCH_RE.match(line)
+    ]
+    if skipped:
+        details = []
+        for match in skipped:
+            name, reason = match["name"], match["reason"]
+            if COMPAT_CUT in reason:
+                details.append(f"{name} 与当前 dsh 不兼容（明细见「dsh 兼容性」）")
+            elif "cannot resolve profile bundle" in reason:
+                details.append(f"{name} 解析不到：缺依赖，或 package.json 里的名字写错")
+            else:
+                details.append(f"{name} 被跳过：{reason[:240]}")
+        return Item(label, False, f"{len(skipped)} 个 bundle 被跳过", details)
+    if other:
+        # 组合阶段出现认不出的 stderr：宁可报红，也不要吞掉一条没见过的告警。
+        return Item(label, False, "`dsh --dump-config` 打出了未知告警", other[:8])
+    return Item(label, True, f"{len(bundles)} 个 bundle 全部加载")
+
+
+def check_local_links(profile_dir: Path, deps: dict[str, str]) -> Item:
+    label = "本地插件链接"
+    linked = [name for name, spec in deps.items() if str(spec).startswith("link:")]
+    if not linked:
+        return Item(label, True, "这个 profile 没有 link: 依赖")
+    details, rows = [], []
+    for name in linked:
+        link = profile_dir / "node_modules" / name
+        if not link.is_symlink() and not link.exists():
+            details.append(f"{name}：node_modules 里没有（先跑 pnpm install）")
+            continue
+        target = Path(os.path.realpath(link))
+        if not target.is_dir():
+            details.append(f"{name}：链接指向的目录不存在（{target}）")
+            continue
+        try:
+            manifest = read_json(target / "package.json")
+        except (OSError, ValueError) as exc:
+            details.append(f"{name}：读不了 {target / 'package.json'}（{exc}）")
+            continue
+        declared = (manifest.get("dsh") or {}).get("bundle") or {}
+        files = declared.get("patch")
+        files = [files] if isinstance(files, str) else list(files or [])
+        if not files:
+            details.append(f"{name}：package.json 里没有 dsh.bundle.patch，dsh 会跳过它")
+            continue
+        missing = [name_file for name_file in files if not (target / name_file).is_file()]
+        if missing:
+            details.append(f"{name}：声明的 patch 文件不在（{', '.join(missing)}）")
+            continue
+        rows.append(f"{name} → {target}")
+    if details:
+        return Item(label, False, f"{len(details)}/{len(linked)} 个链接有问题", details)
+    return Item(label, True, f"{len(linked)} 个 link: 依赖可解析", rows)
+
+
+def check_patches(profile_dir: Path, done: subprocess.CompletedProcess[str] | None) -> Item:
+    label = "patch 落点"
+    patch_file = profile_dir / "cordis.patch.yml"
+    if not patch_file.is_file():
+        return Item(label, False, "profile 里没有 cordis.patch.yml")
+    try:
+        text = patch_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        return Item(label, False, f"读不了 cordis.patch.yml（{exc}）")
+    warnings = []
+    for line in composition_stderr(done):
+        match = PATCH_RE.match(line)
+        if match:
+            warnings.append(f"[{match['file']}] {match['message']}")
+    if done is None or done.returncode != 0:
+        # 组合都没跑完，patch 有没有落上无从得知——不能算绿。
+        return Item(label, False, "组合先失败了，无法判定")
+    if warnings:
+        return Item(label, False, f"{len(warnings)} 条 patch 没落到目标",
+                    [warning[:240] for warning in warnings])
+    count = sum(1 for line in text.splitlines() if PATCH_ENTRY_RE.match(line))
+    home_patch = DSH_HOME / "cordis.patch.yml"
+    extra = f"，含 {shorten(home_patch)}" if home_patch.is_file() else ""
+    return Item(label, True, f"{count} 条 patch 全部命中目标 id{extra}")
+
+
+def lock_versions(lock_path: Path) -> dict[str, str]:
+    """从 pnpm-lock v9 的根 importer（`importers:` 下的 `.`）读 {包名: 锁定版本}。
+
+    只认这一段——`packages:` / `snapshots:` 里的同名条目是另一回事。版本里的
+    `(patch_hash=…)` 后缀在这里去掉，才好和装上的 package.json 对比。
+    """
+    versions: dict[str, str] = {}
+    section = ""
+    importer = ""
+    in_deps = False
+    current = ""
+    for raw in lock_path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        line = raw.strip()
+        if indent == 0:
+            section, importer, in_deps, current = line.rstrip(":"), "", False, ""
+            continue
+        if section != "importers":
+            continue
+        if indent == 2 and line.endswith(":"):
+            importer, in_deps, current = line[:-1].strip("'\""), False, ""
+            continue
+        if importer != ".":
+            continue
+        if indent == 4:
+            in_deps, current = line.startswith("dependencies:"), ""
+            continue
+        if in_deps and indent == 6 and line.endswith(":"):
+            current = line[:-1].strip("'\"")
+            continue
+        if in_deps and current and indent == 8 and line.startswith("version:"):
+            value = line.split(":", 1)[1].strip().strip("'\"")
+            versions[current] = value.split("(")[0]
+    return versions
+
+
+def check_bundles(profile_dir: Path,
+                  third_party: list[str]) -> tuple[Item, dict[str, str]]:
+    """第三方 bundle 在位 + 版本与锁文件一致。顺带交出 {包名: 装上的版本}。"""
+    label = "第三方 bundle"
+    installed: dict[str, str] = {}
+    if not third_party:
+        return Item(label, True, "这个 profile 没有第三方依赖"), installed
+
+    problems = []
+    for name in third_party:
+        try:
+            manifest = read_json(profile_dir / "node_modules" / name / "package.json")
+            installed[name] = manifest["version"]
+        except (OSError, ValueError, KeyError):
+            problems.append(f"{name}：node_modules 里没有（先跑 pnpm install）")
+
+    lock_path = profile_dir / "pnpm-lock.yaml"
+    lock_problem = ""
+    pinned: dict[str, str] = {}
+    if not lock_path.is_file():
+        lock_problem = "profile 里没有 pnpm-lock.yaml，版本无从核对"
+    else:
+        try:
+            pinned = lock_versions(lock_path)
+        except OSError as exc:
+            lock_problem = f"读不了 pnpm-lock.yaml（{exc}）"
+        if not lock_problem and not pinned:
+            lock_problem = "pnpm-lock.yaml 里读不到根 importer 的依赖版本（格式变了？）"
+    if not lock_problem:
+        for name, version in installed.items():
+            if name not in pinned:
+                problems.append(f"{name}：锁文件的 importer 里没有这一条")
+            elif pinned[name] != version:
+                problems.append(f"{name}：装的是 {version}，锁文件写的是 {pinned[name]}")
+
+    if lock_problem:
+        return Item(label, False, lock_problem, problems), installed
+    if problems:
+        return Item(label, False,
+                    f"{len(problems)}/{len(third_party)} 个第三方 bundle 不对",
+                    problems), installed
+    return Item(label, True,
+                f"{len(third_party)} 个第三方 bundle 在位，版本与 pnpm-lock.yaml 一致",
+                [f"{name} {installed[name]}" for name in third_party]), installed
+
+
+def dsh_requirement(manifest: dict) -> str:
+    """bundle 声明的 dsh 要求，和 dsh 自己的判定规则一致：
+
+    有 `engines.dsh` 就只看它；否则每个 `@deepseek-ai/dsh*` peer 都要满足。
+    """
+    engines = manifest.get("engines") or {}
+    if isinstance(engines.get("dsh"), str):
+        return engines["dsh"]
+    ranges = {
+        str(value)
+        for name, value in (manifest.get("peerDependencies") or {}).items()
+        if name == "@deepseek-ai/dsh" or name.startswith("@deepseek-ai/dsh-")
+    }
+    if not ranges:
+        return "未声明"
+    if len(ranges) == 1:
+        return next(iter(ranges))
+    return f"{len(ranges)} 种范围（{'、'.join(sorted(ranges)[:2])}…）"
+
+
+def check_compat(profile_dir: Path, third_party: list[str], installed: dict[str, str],
+                 skips: list[tuple[str, str]], version: str,
+                 done: subprocess.CompletedProcess[str] | None) -> Item:
+    """逐 bundle 报「装了什么版本、要求什么」，判定沿用 dsh 自己的告警。
+
+    自己比 semver 会和 dsh 走偏（它的范围检查带 `includePrerelease`，还有
+    `compatibility.json` 的精确豁免），所以结论只认 dsh 说过的话。
+    """
+    label = "dsh 兼容性"
+    if done is None or done.returncode != 0:
+        return Item(label, False, "组合先失败了，无法判定")
+    broken = [(name, reason) for name, reason in skips if COMPAT_CUT in reason]
+    if broken:
+        details = [f"{name}：{reason.split(COMPAT_CUT)[0].removeprefix('Error: ')}"
+                   for name, reason in broken]
+        details.append("修法：装兼容的 bundle 版本，或在 dsh 里显式 allow-version 豁免")
+        return Item(label, False, f"dsh {version} 不接受 {len(broken)} 个 bundle", details)
+    if not third_party:
+        return Item(label, True, "没有第三方 bundle 要判定")
+    rows, unreadable = [], []
+    for name in third_party:
+        try:
+            manifest = read_json(profile_dir / "node_modules" / name / "package.json")
+        except (OSError, ValueError):
+            unreadable.append(name)
+            continue
+        rows.append(f"{name} {installed.get(name, '?')}  dsh {dsh_requirement(manifest)}")
+    if unreadable:
+        # 读不到声明就说「全部接受」是假绿；缺依赖本身由「第三方 bundle」那项报。
+        return Item(label, False, f"{len(unreadable)} 个 bundle 的 package.json 读不到",
+                    [f"{name}：node_modules 里没有" for name in unreadable])
+    return Item(label, True,
+                f"没有 bundle 因 dsh {version} 不兼容被跳过", rows)
+
+
+# ── 输出 ─────────────────────────────────────────────────────────────────────
+
+
+def report(items: list[Item], *, profile: str, version: str, verbose: bool) -> int:
+    width = max(cell_width(item.label) for item in items)
+    failed = [item for item in items if not item.ok]
+    for item in items:
+        mark = paint(GREEN, "✓") if item.ok else paint(RED, "✗")
+        pad = " " * (width - cell_width(item.label))
+        print(f"  {mark} {item.label}{pad}  {item.summary}")
+        if item.details and (not item.ok or verbose):
+            for detail in item.details:
+                print(f"      {paint(DIM, detail)}")
+    print()
+    if failed:
+        print(f"{paint(RED, f'{len(failed)} 项未通过')}：按上面的 ✗ 逐条修，改完再跑一次。")
+        return 1
+    print(f"{paint(GREEN, '全绿')}：profile {profile} 在 dsh {version} 上成立。")
+    return 0
+
+
+# ── 入口 ─────────────────────────────────────────────────────────────────────
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="dsh-doctor",
+        description="只读体检：这套 DSH profile 在当前离线 dsh 上成立吗。",
+    )
+    parser.add_argument("--profile", default="web", metavar="NAME",
+                        help="要体检的 profile（默认 web）")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="展开每个 bundle 的版本与 dsh 要求")
+    args = parser.parse_args(argv)
+
+    dsh_bin = shutil.which("dsh")
+    if dsh_bin is None:
+        fail("PATH 上找不到 dsh（mise 装好后跑一次 `mise reshim`）")
+    profile_dir = DSH_HOME / "profiles" / args.profile
+    if not (profile_dir / "package.json").is_file():
+        fail(f"profile {args.profile!r} 不存在：{profile_dir} 里没有 package.json")
+
+    try:
+        version = run([dsh_bin, "--version"]).stdout.strip().splitlines()[0]
+    except (OSError, subprocess.TimeoutExpired, IndexError):
+        fail("跑不了 `dsh --version`")
+    try:
+        manifest = read_json(profile_dir / "package.json")
+    except (OSError, ValueError) as exc:
+        fail(f"读不了 {profile_dir / 'package.json'}（{exc}）")
+
+    deps = manifest.get("dependencies") or {}
+    bundles = ((manifest.get("dsh") or {}).get("profile") or {}).get("bundles") or []
+    third_party = [name for name in deps if not str(name).startswith("@local/")]
+
+    try:
+        done = run([dsh_bin, "--profile", args.profile, "--dump-config"])
+    except subprocess.TimeoutExpired:
+        done = None
+    except OSError as exc:
+        fail(f"跑不了 `dsh --profile {args.profile} --dump-config`（{exc}）")
+    skips = [(match["name"], match["reason"]) for
+             match in (SKIP_RE.match(line) for line in composition_stderr(done)) if match]
+
+    print(f"dsh-doctor — profile {args.profile} · dsh {version}")
+    if args.verbose:
+        print(paint(DIM, f"  dsh: {dsh_bin}"))
+        print(paint(DIM, f"  DSH_HOME: {DSH_HOME}"))
+        print(paint(DIM, f"  profile: {profile_dir}"))
+    print()
+
+    bundles_item, installed = check_bundles(profile_dir, third_party)
+    items = [
+        check_composition(done, bundles),
+        check_local_links(profile_dir, deps),
+        check_patches(profile_dir, done),
+        bundles_item,
+        check_compat(profile_dir, third_party, installed, skips, version, done),
+    ]
+    return report(items, profile=args.profile, version=version, verbose=args.verbose)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)

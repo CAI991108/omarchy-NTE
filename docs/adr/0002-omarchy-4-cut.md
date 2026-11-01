@@ -50,6 +50,12 @@ rather than translated from the old files.
   theme symlinks, `theme-set.d` hook, `waybar` restart advice) are re-stated against 4.0.
 - The old tree is one `git show omarchy-3.8.2:config/...` away, so deletions in `main`
   are deliberate rather than lossy.
+- **A DSH upgrade ends with a self-check.** `bin/dsh-doctor` (read-only) answers whether
+  the `web` profile still holds on the running DSH — bundle resolution, the two `@local`
+  links, patch ids, bundle versions against `pnpm-lock.yaml`, and DSH compatibility — in
+  one command with a 0/1 exit code. Run it after every
+  `mise use -g npm:@deepseek-ai/dsh@<version>`: a broken profile does not make DSH fail,
+  it makes it start quietly incomplete, so the failing item names what the upgrade broke.
 - `packages/` stays a 3.8.2-era snapshot for now; re-running `pacman -Qe` is a separate,
   human-reviewed step.
 - **5.x criterion:** when the next generation lands, turn the `docs/omarchy-4.md`

@@ -51,6 +51,11 @@ cd ~/.dsh/profiles/web && pnpm install
 所以升级 DSH 是 `mise use -g npm:@deepseek-ai/dsh@<版本>` 的事，不用改单元文件。
 URL 带一次性 browser-trust token，写在 `~/.local/state/dsh-web/server.log` 里给启动器读。
 
+**升级完跑一次 [`bin/dsh-doctor`](../bin/dsh-doctor)**（只读，`-v` 展开明细）：
+它把 profile 组合一遍，逐项报 bundle 解析、`@local` 链接、patch 落点、第三方 bundle
+版本对锁、dsh 兼容性；红的那项会点名。这类失效不会让 dsh 报错——升级把 bundle 判成
+不兼容时，dsh 只是静默跳过它继续启动。
+
 ## 换机器时要留意
 
 - **模型 provider**：`cordis.patch.yml` 里默认 `deepseek-account`（登录态）。
