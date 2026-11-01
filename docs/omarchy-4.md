@@ -103,7 +103,7 @@ omarchy hook install theme-set path/to/hook
 
 ```bash
 ./install.sh --dry-run              # 期望：只剩刻意的差异（git identity、终端的 OSC52/按键等）
-dsh-doctor                          # 期望：全绿（先跑过 pnpm install；-v 看每个 bundle 的版本与 engines.dsh）
+dsh-doctor                          # 期望：全绿（先跑过 ./install.sh --dsh-deps 或 pnpm install；-v 看每个 bundle 的版本与 engines.dsh）
 hyprctl reload && hyprctl configerrors
 omarchy restart terminal
 omarchy restart shell

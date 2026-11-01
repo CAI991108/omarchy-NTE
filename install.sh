@@ -36,9 +36,18 @@
 #   ./install.sh --wallpapers=<theme>         # also install wallpapers for one theme
 #   ./install.sh --wallpapers=all             # also install every theme in the manifest
 #   ./install.sh --wallpapers-only            # ONLY wallpapers: skip the rest of the deploy
+#   ./install.sh --dsh-deps                   # also install the DSH web profile's npm deps
 #
 # --wallpapers is off by default: without it the script never touches the network.
 # `--dry-run --wallpapers` prints the plan but fetches nothing and writes nothing.
+#
+# --dsh-deps is the other opt-in network step. It runs `pnpm install` in the
+# deployed ~/.dsh/profiles/web after the config trees have landed, so DSH can
+# actually start with this profile. Off by default like --wallpapers:
+#   ./install.sh --dsh-deps              # deploy, then install the dependencies
+#   ./install.sh --dry-run --dsh-deps    # print the command, install nothing
+# It needs pnpm (and the deployed profile); a failure is reported at the end and
+# the script exits non-zero, but everything already deployed stays in place.
 #
 # --wallpapers-only deploys config/omarchy/backgrounds/ (the bundled image) and the
 # optional --wallpapers pull, then stops: no ~/.config snapshot, no other config
@@ -70,6 +79,11 @@ DRY_RUN=false
 WALLPAPERS=""
 # true = deploy only config/omarchy/backgrounds/ (plus --wallpapers) and stop.
 WALLPAPERS_ONLY=false
+# true = after deploying, run `pnpm install` in ~/.dsh/profiles/web.
+DSH_DEPS=false
+# Set when --dsh-deps was requested but the install did not succeed; reported
+# after the deploy steps so the rest of the desktop is still set up.
+dsh_deps_failed=false
 # Set only for a usage-level wallpaper error (unknown theme). Network/checksum
 # failures stay warnings: the config deployment itself already succeeded.
 wallpaper_usage_error=false
@@ -111,15 +125,22 @@ while (( $# > 0 )); do
   case "$1" in
     --dry-run)         DRY_RUN=true ;;
     --wallpapers-only) WALLPAPERS_ONLY=true ;;
+    --dsh-deps)        DSH_DEPS=true ;;
     --wallpapers)      WALLPAPERS="__current__" ;;
     --wallpapers=*)
       WALLPAPERS="${1#--wallpapers=}"
       [[ -z $WALLPAPERS ]] && die "--wallpapers= 后面要跟主题名或 all"
       ;;
-    *)                 die "未知参数: $1（支持 --dry-run、--wallpapers[=<theme>|all]、--wallpapers-only）" ;;
+    *)                 die "未知参数: $1（支持 --dry-run、--wallpapers[=<theme>|all]、--wallpapers-only、--dsh-deps）" ;;
   esac
   shift
 done
+
+# --wallpapers-only means "only wallpapers": it exits before the dependency step,
+# so combining the two would silently ignore --dsh-deps. Refuse instead.
+if $WALLPAPERS_ONLY && $DSH_DEPS; then
+  die "--dsh-deps 不能和 --wallpapers-only 一起用（后者只装壁纸，不碰依赖）"
+fi
 
 # Run a command, or just print it in dry-run mode.
 run() {
@@ -366,7 +387,7 @@ else
   done
 fi
 
-if [[ -d $HOME/.dsh/profiles/web ]] && ! $DRY_RUN && ! $WALLPAPERS_ONLY && (( total_deployed > 0 )); then
+if [[ -d $HOME/.dsh/profiles/web ]] && ! $DRY_RUN && ! $WALLPAPERS_ONLY && ! $DSH_DEPS && (( total_deployed > 0 )); then
   info "  DSH 依赖还没安装。要让配置生效，执行："
   info "    cd ~/.dsh/profiles/web && pnpm install"
 fi
@@ -643,6 +664,77 @@ else
   warn "未安装 fcitx5，跳过"
 fi
 
+# ── 5. DSH profile dependencies (--dsh-deps) ─────────────────────────────────
+# Off by default: the default run never touches the network. When asked, install
+# the deployed profile's npm dependencies after every deploy step has landed, so a
+# failed install still leaves a fully deployed desktop (simply one DSH can't
+# launch yet) instead of half-copied config trees. `pnpm install` is run in the
+# deployed profile, never in the repo copy: the profile's `link:` dependencies
+# resolve relative to ~/.dsh, which is exactly where the deploy put the plugins.
+
+# Install one profile's dependencies. Returns non-zero on failure and never
+# deletes node_modules itself.
+#
+# The first attempt is --frozen-lockfile, because the shipped lockfile is the
+# point. A newer pnpm can still refuse a lockfile whose recorded config no longer
+# matches the workspace config (ERR_PNPM_LOCKFILE_CONFIG_MISMATCH) even though
+# every package version is identical; only that error falls back, once, to
+# --no-frozen-lockfile with an explicit warning. Any other failure is reported
+# and left alone.
+install_dsh_deps() {
+  local profile="$1" log
+  info "  目录:    $profile"
+  info "  pnpm:    $(pnpm --version)"
+  info "  命令:    pnpm install --frozen-lockfile"
+
+  log="$(mktemp)"
+  # tee keeps the install output visible while a copy is kept for the mismatch
+  # check. pipefail (set at the top) makes the pipeline report pnpm's status.
+  if ( cd "$profile" && pnpm install --frozen-lockfile ) 2>&1 | tee "$log"; then
+    rm -f "$log"
+    ok "DSH 依赖已安装"
+    return 0
+  fi
+
+  if ! grep -q 'ERR_PNPM_LOCKFILE_CONFIG_MISMATCH' "$log"; then
+    rm -f "$log"
+    warn "pnpm install 失败（不是锁文件配置不匹配，不回落）；既有 node_modules 未删除"
+    return 1
+  fi
+
+  warn "锁文件与当前 pnpm 配置不匹配（ERR_PNPM_LOCKFILE_CONFIG_MISMATCH）"
+  warn "回落到 --no-frozen-lockfile：锁文件被规范化，包版本未变"
+  rm -f "$log"
+  if ( cd "$profile" && pnpm install --no-frozen-lockfile ); then
+    ok "DSH 依赖已安装（锁文件已规范化）"
+    return 0
+  fi
+  warn "pnpm install --no-frozen-lockfile 也失败了；既有 node_modules 未删除"
+  return 1
+}
+
+if $DSH_DEPS; then
+  step "5. DSH profile 依赖（--dsh-deps）"
+  dsh_deps_profile="$HOME/.dsh/profiles/web"
+  if $DRY_RUN; then
+    info "  目录:    $dsh_deps_profile"
+    dim "    would run: pnpm install --frozen-lockfile"
+    dim "    锁文件与 pnpm 配置不匹配时回落到 --no-frozen-lockfile，并警告「锁文件被规范化，包版本未变」"
+    dim "    dry-run：不联网、不写盘"
+    if ! command -v pnpm >/dev/null 2>&1; then
+      warn "找不到 pnpm（真正执行前需要：npm install -g pnpm，或 corepack enable pnpm）"
+    fi
+  elif [[ ! -d $dsh_deps_profile ]]; then
+    warn "找不到 $dsh_deps_profile；dsh/ 树没有部署，无法安装依赖"
+    dsh_deps_failed=true
+  elif ! command -v pnpm >/dev/null 2>&1; then
+    warn "找不到 pnpm。安装后再跑：./install.sh --dsh-deps（npm install -g pnpm 或 corepack enable pnpm）"
+    dsh_deps_failed=true
+  else
+    install_dsh_deps "$dsh_deps_profile" || dsh_deps_failed=true
+  fi
+fi
+
 # ── done ──────────────────────────────────────────────────────────────────────
 step "完成"
 if $DRY_RUN; then
@@ -657,9 +749,17 @@ else
   info "    hyprctl configerrors        # 确认没有配置错误"
   info "    omarchy restart terminal    # 让终端重新读取主题 include"
   info "    omarchy restart shell       # 让 Quickshell 的 bar/通知重新读取 shell.json"
+  if $DSH_DEPS && ! $dsh_deps_failed; then
+    info "    dsh-doctor                  # 确认 DSH profile 在当前 dsh 版本上五项全绿"
+  fi
 fi
 
 if $wallpaper_usage_error; then
   printf '%sERROR:%s 请求的壁纸主题不存在（配置本身已部署完成）。\n' "$C_RED" "$C_RESET" >&2
+fi
+if $dsh_deps_failed; then
+  printf '%sERROR:%s DSH 依赖没有装好；配置已部署，修好后重跑：./install.sh --dsh-deps\n' "$C_RED" "$C_RESET" >&2
+fi
+if $wallpaper_usage_error || $dsh_deps_failed; then
   exit 1
 fi

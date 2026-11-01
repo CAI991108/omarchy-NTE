@@ -88,11 +88,14 @@
 
 ### 复现
 
-`dsh/` 与 `~/.dsh` 一一对应，`install.sh` 复制前会先备份；装完要手动补一次依赖：
+`dsh/` 与 `~/.dsh` 一一对应，`install.sh` 复制前会先备份。依赖默认不装（默认部署不联网）；
+要一条命令装好，部署时带 `--dsh-deps`：
 
 ```bash
-cd ~/.dsh/profiles/web && pnpm install
+./install.sh --dsh-deps     # 部署配置树，再在 ~/.dsh/profiles/web 跑 pnpm install
 ```
+
+没带 flag 时仍可手动补：`cd ~/.dsh/profiles/web && pnpm install`。
 
 细节见 [`dsh/README.md`](dsh/README.md)。`Super + D` 静默拉起（不占终端）：先 `systemctl --user start dsh-web`，再由 [`bin/dsh-web-open`](bin/dsh-web-open) 开窗口。
 
@@ -105,7 +108,8 @@ cd ~/.dsh/profiles/web && pnpm install
   `permission`…）全部存在。
 - **路径是相对的**：两个本地插件用 `link:../../plugins/...`，在仓库内和部署到
   `~/.dsh`。
-- **依赖可复现**：`pnpm-lock.yaml` 锁住 179 个包，安装时用 `--frozen-lockfile`。
+- **依赖可复现**：`pnpm-lock.yaml` 锁住 179 个包，`--dsh-deps` 默认用 `--frozen-lockfile`；
+  pnpm 配置与锁文件不匹配时回落到 `--no-frozen-lockfile` 并警告（包版本不变）。
 - **一个补丁**：`patches/omaseek-pixel@0.2.2.patch`
   由 `pnpm-workspace.yaml` 的 `patchedDependencies` 应用。
 - **Windows 桌面版同样可用**：profile 名从 `web` 换成 `desktop`、装一次依赖即可 ——
