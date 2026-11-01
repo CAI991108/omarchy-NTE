@@ -3,7 +3,10 @@
 
 数据源
     ~/.dsh/sessions/<workspace>/session-<uuid>/session.v4.jsonl.zstd
-    每行一个 JSON 事件；其中 tool/call 带 {name, arguments(JSON 字符串), time(ms)}：
+    每行一个 JSON 事件；文件操作落在两类事件里（rc.5 起，run_code 里嵌套调用的
+    工具走第二类，arguments 从 JSON 字符串变成对象）：
+      tool/call               {name, arguments(JSON 字符串), time(ms)}
+      tool/ptc-dispatch-start {name, arguments(对象), time(ms)}
       write / edit        -> is_write = true
       read / read_image   -> is_write = false
 
@@ -69,6 +72,11 @@ FILE_TOOLS = {
     "read": False,
     "read_image": False,
 }
+
+# rc.5 起，run_code 里嵌套调用的工具不再记 tool/call，改记一条
+# tool/ptc-dispatch-start（arguments 是对象，不是 JSON 字符串）。
+# 两条路径都要认，否则嵌套的 write/edit/read 会整个漏掉。
+FILE_TOOL_EVENT_TYPES = {"tool/call", "tool/ptc-dispatch-start"}
 
 
 def log(msg: str, quiet: bool = False) -> None:
@@ -157,16 +165,28 @@ def git_project(path: Path) -> str | None:
     return None
 
 
+def parse_tool_args(raw: object) -> dict | None:
+    """tool/call 的 arguments 是 JSON 字符串，ptc-dispatch 的已经是对象。"""
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    try:
+        args = json.loads(raw)
+    except ValueError:
+        return None
+    return args if isinstance(args, dict) else None
+
+
 def entity_from_event(ev: dict, cwd: str | None) -> dict | None:
-    if ev.get("type") != "tool/call":
+    if ev.get("type") not in FILE_TOOL_EVENT_TYPES:
         return None
     data = ev.get("data") or {}
     tool = data.get("name")
     if tool not in FILE_TOOLS:
         return None
-    try:
-        args = json.loads(data.get("arguments") or "{}")
-    except ValueError:
+    args = parse_tool_args(data.get("arguments"))
+    if args is None:
         return None
     raw = args.get("file_path")
     if not isinstance(raw, str) or not raw:
@@ -341,7 +361,8 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if args.category.strip().lower() == "ai coding":
         sys.stderr.write('已禁用 "ai coding" 分类，请使用默认的 coding。\n')
         return 2
-    if not WAKATIME_CLI.exists():
+    # dry-run 不调用 CLI，没有它也应该能预览（新机器上先验证解析再去认证）。
+    if not WAKATIME_CLI.exists() and not args.dry_run:
         sys.stderr.write(f"找不到 wakatime-cli: {WAKATIME_CLI}\n")
         return 1
     if shutil.which("zstd") is None:
