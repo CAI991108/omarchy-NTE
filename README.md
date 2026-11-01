@@ -120,11 +120,18 @@ cd ~/.dsh/profiles/web && pnpm install
 `install.sh` 会把它装到 `~/.local/bin`，并启用 `dsh-wakatime.timer`（每 2 分钟；
 需要 `python3` 与 `zstd`）。
 
+key 有两种形态，按形状自动分流：UUID（含 `waka_<uuid>`，插件用的 write-only API Key）交给
+`wakatime-cli`，沿用它的离线队列与限流；`waka_tok_…`（新的 OAuth 令牌，需要
+`write_heartbeats` scope）则由脚本直连 `POST /users/current/heartbeats.bulk` ——
+`wakatime-cli` 在客户端只认 UUID 格式，带不动令牌。
+
 新机器上只差两步：
 
 ```bash
-# 1) 让任意 WakaTime 编辑器插件完成一次认证（会自动下载 wakatime-cli）
-# 2) 自检依赖、CLI、密钥与会话格式
+# 1) 把有写权限的 key 写进 ~/.wakatime.cfg：UUID 形式的 API Key，
+#    或带 write_heartbeats scope 的 waka_tok_ 令牌；UUID 路径还需要
+#    ~/.wakatime/wakatime-cli（装任意 WakaTime 编辑器插件会自动下载）
+# 2) 自检依赖、密钥、会话格式（doctor 会真发一次请求验 key，不只是看配没配）
 ~/.local/bin/dsh-wakatime doctor
 ```
 
