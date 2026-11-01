@@ -1,0 +1,22 @@
+# lazydocker 0.25.2 — colours mirrored from the Omarchy (catppuccin) theme.
+#
+# lazydocker cannot read Omarchy's theme state, so these are static copies of
+# ~/.local/state/omarchy/current/theme/colors.toml:
+#   accent    #89b4fa -> active border + options text
+#   muted     #585b70 -> inactive border
+#   selection #45475a -> selected line background
+# Update them by hand if the Omarchy theme changes.
+#
+# Hex values work on 0.25.2 even though its Config.md only lists ANSI names:
+# pkg/gui/gocui.go parses `#rrggbb` into an RGB attribute.
+gui:
+  theme:
+    activeBorderColor:
+      - "#89b4fa"
+      - bold
+    inactiveBorderColor:
+      - "#585b70"
+    selectedLineBgColor:
+      - "#45475a"
+    optionsTextColor:
+      - "#89b4fa"
