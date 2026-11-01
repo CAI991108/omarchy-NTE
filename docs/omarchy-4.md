@@ -97,11 +97,13 @@ omarchy hook install theme-set path/to/hook
 - 启动器：[`bin/dsh-web-open`](../bin/dsh-web-open)；窗口已存在则聚焦（优先应用窗口，其次浏览器标签页）
 - 开机自启是**可选**的：`systemctl --user enable dsh-web.service`
 - 浏览器信任是**按次 token**：每次启动 `dsh web` 都会打印新的 `?token=…`，启动器从日志里取最新一条
+- **升级 dsh 之后跑一次 [`bin/dsh-doctor`](../bin/dsh-doctor)**（只读）：它把 profile 组合一遍，逐项报 ✓/✗——bundle 解析、`@local` 链接、patch 落点、第三方 bundle 版本对锁、dsh 兼容性。这类失效不让 dsh 报错（退出码仍是 0，坏消息只在 stderr），所以别拿「能启动」当健康。
 
 ## 8. 部署后怎么验
 
 ```bash
 ./install.sh --dry-run              # 期望：只剩刻意的差异（git identity、终端的 OSC52/按键等）
+dsh-doctor                          # 期望：全绿（先跑过 pnpm install；-v 看每个 bundle 的版本与 engines.dsh）
 hyprctl reload && hyprctl configerrors
 omarchy restart terminal
 omarchy restart shell
