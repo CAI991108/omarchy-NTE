@@ -325,6 +325,9 @@ deploy_tree() {
     # so git keeps otherwise-empty directories and are never deployed.
     [[ -L $src ]] && continue
     [[ $(basename "$src") == ".gitkeep" ]] && continue
+    # Python bytecode is build output (`py_compile` of a bin/ script) and is
+    # gitignored; deploying it would litter ~/.local/bin with .pyc files.
+    [[ $src == *"/__pycache__/"* ]] && continue
     rel="${src#"$src_root"/}"
     [[ -n $only && $rel != "$only"* ]] && continue
     if "$handler" "$src" "$rel"; then
