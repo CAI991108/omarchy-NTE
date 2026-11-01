@@ -33,13 +33,19 @@ dsh/
 ## 部署
 
 `install.sh` 会自动把 `profiles/web/` 与 `plugins/` 复制到对应位置（先备份）。
-复制完成后依赖尚未安装，需要手动跑一次：
+依赖默认不装（默认部署不联网）；要一并装好，部署时加 `--dsh-deps`：
 
 ```bash
-cd ~/.dsh/profiles/web && pnpm install
+./install.sh --dsh-deps
 ```
 
-> 这一步需要网络（要拉 npm 上的第三方插件），所以没有写进 `install.sh`。
+它在部署完成后于 `~/.dsh/profiles/web` 跑 `pnpm install --frozen-lockfile`。
+锁文件与当前 pnpm 配置不匹配（`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`）时回落到
+`--no-frozen-lockfile` 并明确警告：锁文件被规范化，包版本未变。
+`--dry-run --dsh-deps` 只打印命令，不联网、不写盘。
+
+> 这是本脚本除壁纸外唯一的联网步骤，且只在显式传 flag 时发生。没带 flag 时手动补一次：
+> `cd ~/.dsh/profiles/web && pnpm install`。
 
 ## 静默启动
 

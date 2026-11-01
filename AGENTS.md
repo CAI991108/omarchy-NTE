@@ -58,7 +58,9 @@ same rule applies to capture: never copy the live `git/config` back into the rep
 ## DSH
 
 `dsh/` mirrors `~/.dsh` so the profile's relative `link:../../plugins/...` specs resolve
-after deployment; `pnpm install` is a manual follow-up. The model provider in
+after deployment; `./install.sh --dsh-deps` installs the profile's dependencies after the
+copy (off by default, network only when the flag is passed; `pnpm install` remains the
+manual fallback). The model provider in
 `cordis.patch.yml` defaults to `deepseek-account` (the logged-in flow) — switching to an
 API key means `deepseek-official`. `SUPER+D` runs `bin/dsh-web-open`, which starts the
 headless `dsh-web.service` and opens the UI; see `dsh/README.md`.
