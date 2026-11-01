@@ -439,6 +439,27 @@ def cmd_sync(args: argparse.Namespace) -> int:
         lock.close()
 
 
+def probe_cli_key() -> tuple[bool, str]:
+    """用 CLI 自己跑一次 --today：key 格式、key 有效性、出站链路一次测到。
+
+    doctor 以前只看 api_key 有没有写，于是「配置项在、但 CLI 根本不接受这个 key」
+    也会全绿，直到第一次 sync 才暴露。
+    """
+    try:
+        proc = subprocess.run(
+            [str(WAKATIME_CLI), "--today"], capture_output=True, text=True, timeout=60
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"调用 wakatime-cli 失败：{exc}"
+    if proc.returncode == 0:
+        return True, ""
+    return False, (
+        f"wakatime-cli --today 返回 rc={proc.returncode}：key 被拒（CLI 只认 UUID 形式的 "
+        "api_key，waka_tok_… 这类 token 会被拒）、权限不足，或者当前断网。"
+        "换 https://wakatime.com/api-key 的 API Key 再试。"
+    )
+
+
 def cmd_doctor(_: argparse.Namespace) -> int:
     """换机器后自检：依赖、CLI、密钥、会话格式、状态目录。"""
     import configparser
@@ -475,6 +496,9 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         parser.read(cfg)
         key = parser.get("settings", "api_key", fallback="") or parser.get("settings", "apikey", fallback="")
         check(bool(key), "api_key 已配置", ':WakaTimeApiKey 或 wakatime-cli --config-write api_key "..."')
+        if key and WAKATIME_CLI.is_file():
+            ok, note = probe_cli_key()
+            check(ok, "key 能真正发到 WakaTime（wakatime-cli --today）", note)
 
     files = session_files()
     if files:
