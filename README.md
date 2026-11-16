@@ -171,11 +171,11 @@ cd ~/omarchy-NTE
 ### 2. 安装软件包（**需要 sudo，请先人工过一遍清单**）
 
 ```bash
-# 官方仓库的显式包（192 个）—— 清单来自 packages/pacman-explicit.txt
+# 官方仓库的显式包（199 个）—— 清单来自 packages/pacman-explicit.txt
 less packages/pacman-explicit.txt
 sudo pacman -S --needed - < packages/pacman-explicit.txt
 
-# AUR / 外来包（7 个）
+# AUR / 外来包（4 个）
 cat packages/aur-explicit.txt
 omarchy pkg aur add catppuccin-fcitx5-git
 ```

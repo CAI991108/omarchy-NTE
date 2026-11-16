@@ -3,4 +3,6 @@
 1=Hangul
 
 [Behavior]
-ActiveByDefault=False
+# 登入桌面後直接進入中文輸入，不必再按 SUPER+I 啟用。
+# 想回到 Omarchy 預設（開機為英文直入、需要時再切）改成 False。
+ActiveByDefault=True

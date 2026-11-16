@@ -16,14 +16,13 @@
       "bundles": [
         "@deepseek-ai/dsh-base",
         "@deepseek-ai/dsh-web-app",
-        "omaseek-music",
         "omaseek-pixel",
         "omaseek-themes",
         "dsh-better-sidebar",
         "dsh-cost-meter",
         "dsh-mattpocock-skills-deck",
-        "@local/dsh-brand-cover",
-        "@local/dsh-effort-slider"
+        "@local/dsh-effort-slider",
+        "@local/dsh-brand-cover"
       ]
     }
   }

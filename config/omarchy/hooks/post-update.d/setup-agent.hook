@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+# Omarchy ships no default agent, so invite once rather than picking one. An
+# agent already chosen means the invitation has nothing to offer.
+if [[ -z $(omarchy-default-agent) ]] && omarchy-done ensure agent-setup-invitation; then
+  omarchy-notification-send -u critical -g 󰚩 "设置默认 Agent" \
+    "让你常用的 Agent 帮你使用 Omarchy。" \
+    --exec omarchy menu summon setup.default.agent
+fi

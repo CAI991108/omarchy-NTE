@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Launch cliamp with a Bilibili playlist.
+# Default: the combined "B站 - 全部" playlist created by
+# topics/cliamp/sync-bilibili-playlists.py.
+set -euo pipefail
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  exec cliamp --help
+fi
+
+playlist="${1:-B站 - 全部}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+exec cliamp --playlist "$playlist" --auto-play "$@"
