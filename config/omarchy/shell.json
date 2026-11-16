@@ -1,53 +1,13 @@
 {
-  "version": 1,
-  "idle": {
-    "screensaver": 150,
-    "lock": 300
-  },
   "bar": {
-    "position": "top",
-    "transparent": false,
+    "background": "glassy",
     "layout": {
-      "left": [
-        {
-          "id": "omarchy.menu"
-        },
-        {
-          "id": "omarchy.workspaces"
-        }
-      ],
       "center": [
         {
-          "id": "omarchy.clock",
-          "format": "dddd HH:mm",
+          "format": "ddd d MMM HH:mm",
           "formatAlt": "d MMMM 'W'ww yyyy",
+          "id": "omarchy.clock",
           "verticalFormat": "HH\n—\nmm"
-        }
-      ],
-      "right": [
-        {
-          "id": "omarchy.tray"
-        },
-        {
-          "id": "omarchy.keyboard-layout"
-        },
-        {
-          "id": "omarchy.agents"
-        },
-        {
-          "id": "omarchy.bluetooth"
-        },
-        {
-          "id": "omarchy.network"
-        },
-        {
-          "id": "omarchy.audio"
-        },
-        {
-          "id": "omarchy.monitor"
-        },
-        {
-          "id": "omarchy.power"
         }
       ],
       "centerBegin": [
@@ -57,7 +17,6 @@
       ],
       "centerEnd": [
         {
-          "id": "omarchy.elsewhen",
           "cities": [
             {
               "name": "Shanghai",
@@ -79,17 +38,61 @@
               "name": "Dubai",
               "zone": "Asia/Dubai"
             }
-          ]
+          ],
+          "id": "omarchy.elsewhen"
         },
         {
           "id": "omarchy.weather"
         },
         {
+          "id": "zcai.voxtype"
+        },
+        {
           "id": "omarchy.system-update"
         }
       ],
+      "left": [
+        {
+          "id": "omarchy.menu"
+        },
+        {
+          "id": "omarchy.workspaces"
+        }
+      ],
+      "right": [
+        {
+          "id": "omarchy.tray"
+        },
+        {
+          "id": "crmne.hyprmoncfg"
+        },
+        {
+          "id": "omarchy.keyboard-layout"
+        },
+        {
+          "id": "omarchy.agents"
+        },
+        {
+          "id": "omarchy.bluetooth"
+        },
+        {
+          "id": "omarchy.network"
+        },
+        {
+          "id": "omarchy.audio"
+        },
+        {
+          "id": "omarchy.power"
+        }
+      ],
       "tray": []
-    }
+    },
+    "position": "top"
   },
-  "plugins": []
+  "idle": {
+    "lock": 300,
+    "screensaver": 150
+  },
+  "plugins": [],
+  "version": 1
 }

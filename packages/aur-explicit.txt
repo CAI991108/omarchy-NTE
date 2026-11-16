@@ -1,7 +1,4 @@
-catppuccin-fcitx5-git
-dbeaver-ce-bin
-glow-git
-lib32-gtk2
+hyprmoncfg-bin
+metacubexd-bin
+mihomo-bin
 pokemon-colorscripts-git
-wechat-bin
-wemeet-bin

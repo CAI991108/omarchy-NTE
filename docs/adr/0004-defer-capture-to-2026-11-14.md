@@ -43,3 +43,16 @@ re-captures `packages/`.
 - The capture criterion does not change, and capture stays whole-file snapshot.
 - 2026-11-14 is a deadline for "the machine has settled", not a hard wall: if it has not,
   say so on #16 and move the date rather than capturing a moving target.
+
+## Outcome
+
+The sync ran on **2026-11-16**, two days later than planned (the reminder fired after the
+machine had been idle): `config/`, `dsh/` and `bin/` were re-captured from the machine in
+one PR, and `packages/` was regenerated — `pacman -Qqen` / `pacman -Qqem` split into the
+official and AUR lists, plus `environment.txt` and `config-inventory.txt`. The deadline
+clause above was not needed: the machine had been quiet since 2026-11-12, with no package
+changes since 2026-11-06.
+
+Nothing was deployed. The repo-only files the capture criterion keeps
+(`fontconfig/fonts.conf`, `lazydocker/config.yml`, `dsh/README.md`, `bin/dsh-doctor`) stay
+pending under A1. The next capture is the next generation cut (ADR-0002).
