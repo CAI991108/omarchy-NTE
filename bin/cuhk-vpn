@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# omarchy:summary=Connect/disconnect the CUHK-SZ VPN (Cisco AnyConnect compatible)
+# omarchy:args=[toggle|connect|disconnect|status]
+#
+# Uses openconnect from the official Arch repos against vpn.cuhk.edu.cn.
+# The gateway is a Cisco ASA that accepts username/password for the AnyConnect
+# tunnel, so no Cisco Secure Client is needed.
+
+set -uo pipefail
+
+GATEWAY="${CUHKSZ_VPN_GATEWAY:-vpn.cuhk.edu.cn}"
+GROUP="${CUHKSZ_VPN_GROUP:-CUHK(SZ)}"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/cuhk-vpn"
+PIDFILE="/run/cuhk-vpn.pid"
+USERFILE="$STATE_DIR/user"
+LOG="$STATE_DIR/openconnect.log"
+
+mkdir -p "$STATE_DIR"
+
+# Mirror what the terminal shows into a log, so a failure can still be diagnosed
+# after the window is closed. Prompts still reach the terminal through tee, and
+# sudo/openconnect read their secrets from /dev/tty rather than this stream.
+if [[ -z ${CUHKSZ_VPN_NO_LOG:-} ]]; then
+  exec > >(tee -a "$LOG") 2>&1
+fi
+
+notify() {
+  local headline="CUHK-SZ VPN" body="${1:-}"
+  if command -v omarchy-notification-send >/dev/null 2>&1; then
+    omarchy-notification-send "$headline" "$body" >/dev/null 2>&1 && return 0
+  fi
+  command -v notify-send >/dev/null 2>&1 && notify-send "$headline" "$body" >/dev/null 2>&1
+  return 0
+}
+
+vpn_pid() {
+  [[ -r $PIDFILE ]] || return 1
+  local p
+  p=$(<"$PIDFILE")
+  [[ -n $p ]] || return 1
+  printf '%s\n' "$p"
+}
+
+# Runs as the user: /proc/<pid>/cmdline is world readable, so no sudo needed.
+is_up() {
+  local p
+  p=$(vpn_pid) || return 1
+  [[ -d /proc/$p ]] || return 1
+  tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null | grep -q openconnect
+}
+
+tun_iface() {
+  ip -o link show 2>/dev/null | awk -F': ' '/tun[0-9]+:/ {sub(/@.*/,"",$2); print $2; exit}'
+}
+
+do_connect() {
+
+  # CLASH_GUARD_V1 — Clash 的 TUN 在跑时不要连学校 VPN（CUHKSZ_VPN_FORCE=1 可绕过）
+  if [[ -z ${CUHKSZ_VPN_FORCE:-} ]] && ip -o link show mihomo0 >/dev/null 2>&1; then
+    echo "Clash 的 TUN（mihomo0）正在运行，先执行：clash-vpn off" >&2
+    echo "确实要同时开就加 CUHKSZ_VPN_FORCE=1。" >&2
+    notify "Clash 开着，先关它"
+    return 1
+  fi
+  local p user
+  if is_up; then
+    echo "已经连接（PID $(vpn_pid)，接口 $(tun_iface)）。"
+    notify "已经连接（$(tun_iface)）"
+    return 0
+  fi
+
+  rm -f "$PIDFILE"
+  user="${CUHKSZ_VPN_USER:-}"
+  [[ -z $user && -r $USERFILE ]] && user=$(<"$USERFILE")
+
+  if [[ -t 0 ]]; then
+    read -r -p "VPN 用户名（不含 @cuhk.edu.cn）${user:+ [$user]}: " input
+    user="${input:-$user}"
+  fi
+
+  if [[ -z ${user:-} ]]; then
+    echo "缺少用户名。" >&2
+    return 1
+  fi
+  printf '%s\n' "$user" >"$USERFILE"
+
+  echo "连接 $GATEWAY（组 $GROUP，用户 $user）…"
+  echo "提示：第一次连接会询问是否接受服务器证书，输入 y 回车；随后输入 VPN 密码。"
+  echo
+
+  sudo openconnect \
+    --protocol=anyconnect \
+    --authgroup="$GROUP" \
+    --user="$user" \
+    --script=/etc/vpnc/vpnc-script \
+    --pid-file="$PIDFILE" \
+    --background \
+    "$GATEWAY"
+  local rc=$?
+
+  if (( rc != 0 )); then
+    echo "连接失败（退出码 $rc）。" >&2
+    notify "连接失败（退出码 $rc）"
+    return $rc
+  fi
+
+  sleep 2
+  if is_up; then
+    p=$(vpn_pid)
+    echo "已连接：PID $p，接口 $(tun_iface)。"
+    ip -brief addr show "$(tun_iface)" 2>/dev/null || true
+    notify "已连接（$(tun_iface)）"
+    return 0
+  fi
+
+  echo "openconnect 已退出，请检查上面的输出。" >&2
+  notify "连接未建立"
+  return 1
+}
+
+do_disconnect() {
+  local p
+  if ! is_up; then
+    rm -f "$PIDFILE"
+    echo "当前未连接。"
+    return 0
+  fi
+  p=$(vpn_pid)
+  echo "正在断开（PID $p）…"
+  sudo kill -TERM "$p"
+  for _ in {1..20}; do
+    is_up || break
+    sleep 0.5
+  done
+  if is_up; then
+    echo "断开超时，仍在运行（PID $p）。" >&2
+    return 1
+  fi
+  rm -f "$PIDFILE"
+  echo "已断开。"
+  notify "已断开"
+  return 0
+}
+
+do_status() {
+  if is_up; then
+    echo "已连接：PID $(vpn_pid)，接口 $(tun_iface)"
+    ip -brief addr show "$(tun_iface)" 2>/dev/null || true
+  else
+    echo "未连接。"
+    return 1
+  fi
+}
+
+case "${1:-toggle}" in
+  connect) do_connect ;;
+  disconnect|down|stop) do_disconnect ;;
+  status) do_status ;;
+  toggle) if is_up; then do_disconnect; else do_connect; fi ;;
+  *) echo "用法: cuhk-vpn [toggle|connect|disconnect|status]" >&2; exit 2 ;;
+esac

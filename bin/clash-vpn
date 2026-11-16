@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+# omarchy:summary=Start/stop the Clash (mihomo) global TUN proxy
+# omarchy:args=[toggle|on|off|status|panel|log|doctor]
+#
+# 与 ~/.local/bin/cuhk-vpn 同一套形态：图标点一下 -> 浮窗终端 -> sudo 收密码 -> 通知。
+# 两端互斥：学校 VPN 开着时拒绝启动 Clash，反之 cuhk-vpn 里也有守卫。
+
+set -uo pipefail
+
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/mihomo"
+CONF="$CONF_DIR/config.yaml"
+UNIT="mihomo.service"
+IFACE="mihomo0"
+MIXED_PORT="${CLASH_MIXED_PORT:-7890}"
+CTRL_PORT="${CLASH_CTRL_PORT:-9090}"
+UI_DIR="/usr/share/metacubexd"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/clash-vpn"
+LOG="$STATE_DIR/clash-vpn.log"
+VPN_PIDFILE="/run/cuhk-vpn.pid"
+VPN_GATEWAY="${CUHKSZ_VPN_GATEWAY:-vpn.cuhk.edu.cn}"
+
+umask 077
+mkdir -p "$STATE_DIR"
+
+# 把终端里的输出同时写进日志，窗口关掉后还能查。
+if [[ -z ${CLASH_VPN_NO_LOG:-} ]]; then
+  exec > >(tee -a "$LOG") 2>&1
+fi
+
+notify() {
+  local headline="Clash" body="${1:-}"
+  if command -v omarchy-notification-send >/dev/null 2>&1; then
+    omarchy-notification-send "$headline" "$body" >/dev/null 2>&1 && return 0
+  fi
+  command -v notify-send >/dev/null 2>&1 && notify-send "$headline" "$body" >/dev/null 2>&1
+  return 0
+}
+
+is_active() { systemctl is-active --quiet "$UNIT"; }
+iface_up() { ip -o link show "$IFACE" >/dev/null 2>&1; }
+
+secret() {
+  [[ -r $CONF ]] || return 1
+  local s
+  s=$(grep -m1 '^secret:' "$CONF" | sed 's/^secret:[[:space:]]*//; s/^"//; s/"$//')
+  [[ -n $s ]] || return 1
+  printf '%s\n' "$s"
+}
+
+# GET /configs、/proxies 这类只读调用
+api() {
+  local s
+  s=$(secret) || return 1
+  [[ -n $s ]] || return 1
+  curl -sf --max-time 3 -H "Authorization: Bearer $s" "http://127.0.0.1:${CTRL_PORT}$1"
+}
+
+# 学校 VPN 在跑吗？pidfile 优先，其次进程名，最后看 tun0 接口。
+vpn_up() {
+  if [[ -r $VPN_PIDFILE ]]; then
+    local p
+    p=$(<"$VPN_PIDFILE")
+    [[ -n $p && -d /proc/$p ]] && return 0
+  fi
+  pgrep -f "openconnect .*${VPN_GATEWAY}" >/dev/null 2>&1 && return 0
+  ip -o link show tun0 >/dev/null 2>&1
+}
+
+# 端口占用者；空闲返回 1。
+port_owner() {
+  local line
+  line=$(ss -tlnpH "sport = :$1" 2>/dev/null | head -1)
+  [[ -n $line ]] || return 1
+  local who
+  who=$(sed -n 's/.*users:(("\([^"]*\)",pid=\([0-9]*\).*/\1 (pid \2)/p' <<<"$line")
+  printf '%s\n' "${who:-未知进程（需要 root 才能看到）}"
+  return 0
+}
+
+# ---------------------------------------------------------------- 守卫与预检
+
+guard_vpn() {
+  if [[ -n ${CLASH_VPN_FORCE:-} ]]; then
+    echo "CLASH_VPN_FORCE 已设置，跳过学校 VPN 检查。"
+    return 0
+  fi
+  if vpn_up; then
+    echo "学校 VPN 正在运行（tun0 / openconnect）。两条默认路由会互相打架，" >&2
+    echo "先断开：cuhk-vpn disconnect" >&2
+    echo "确实要同时开就加 CLASH_VPN_FORCE=1。" >&2
+    notify "学校 VPN 开着，先断开它"
+    return 1
+  fi
+  return 0
+}
+
+preflight_ports() {
+  local port owner bad=0
+  for port in "$MIXED_PORT" "$CTRL_PORT"; do
+    if owner=$(port_owner "$port"); then
+      if [[ $owner == *mihomo* ]]; then
+        echo "端口 $port 被残留的 mihomo 占着，先跑：clash-vpn doctor" >&2
+      else
+        echo "端口 $port 被 $owner 占用，先处理它（ss -tlnp | grep $port）" >&2
+      fi
+      bad=1
+    fi
+  done
+  return $bad
+}
+
+# ---------------------------------------------------------------- 动作
+
+# 全局组默认落在 DIRECT/REJECT 时（DIRECT 通常是列表第一项），自动切到 AUTO，
+# 否则“开起来了”等于没开代理。手动选过节点的话 store-selected 会记住，这里不动。
+select_default_group() {
+  local all now s
+  all=$(api /proxies 2>/dev/null) || return 0
+  now=$(jq -r '.proxies.GLOBAL.now // empty' <<<"$all" 2>/dev/null)
+  case $now in
+    ''|DIRECT|REJECT|COMPATIBLE) ;;
+    *) return 0 ;;
+  esac
+  jq -e '.proxies.AUTO' <<<"$all" >/dev/null 2>&1 || return 0
+  s=$(secret) || return 0
+  if curl -sf --max-time 3 -X PUT -H "Authorization: Bearer $s" \
+      -d '{"name":"AUTO"}' "http://127.0.0.1:${CTRL_PORT}/proxies/GLOBAL" >/dev/null 2>&1; then
+    echo "GLOBAL 原先是 ${now:-空}，已切到 AUTO。"
+  fi
+}
+
+do_status() {
+  local state all now inner
+  if is_active; then
+    state="服务运行中"
+  else
+    state="服务未运行"
+  fi
+  printf '服务    %s\n' "$state"
+  if iface_up; then
+    printf 'TUN     %s 已建立\n' "$IFACE"
+    ip -brief addr show "$IFACE" 2>/dev/null | sed 's/^/        /'
+  else
+    printf 'TUN     %s 未建立\n' "$IFACE"
+  fi
+  if all=$(api /proxies 2>/dev/null); then
+    now=$(jq -r '.proxies.GLOBAL.now // empty' <<<"$all" 2>/dev/null)
+    if [[ -n $now ]]; then
+      inner=$(jq -r --arg n "$now" '.proxies[$n].now // empty' <<<"$all" 2>/dev/null)
+      [[ -n $inner ]] && now="$now → $inner"
+      printf '当前节点 %s\n' "$now"
+    fi
+  fi
+  if is_active; then
+    printf '面板    http://127.0.0.1:%s/ui/  （secret 用 clash-vpn panel 打印）\n' "$CTRL_PORT"
+  fi
+}
+
+do_on() {
+  if is_active; then
+    if iface_up; then
+      echo "已经开着（$IFACE）。"
+      notify "已经开着（$IFACE）"
+    else
+      echo "服务在跑但 $IFACE 没起来，看：clash-vpn log" >&2
+      notify "TUN 未就绪"
+    fi
+    return 0
+  fi
+  [[ -r $CONF ]] || { echo "缺少配置：$CONF（先跑 install.sh）" >&2; return 1; }
+  guard_vpn || return 1
+  preflight_ports || return 1
+
+  echo "启动 $UNIT …（sudo 可能要密码）"
+  sudo systemctl start "$UNIT" || {
+    echo "启动失败。看日志：clash-vpn log" >&2
+    notify "启动失败"
+    return 1
+  }
+
+  local i
+  for i in {1..24}; do
+    iface_up && break
+    sleep 0.5
+  done
+  if ! iface_up; then
+    echo "服务起来了但 $IFACE 没出现。看日志：clash-vpn log" >&2
+    notify "TUN 未就绪"
+    return 1
+  fi
+  sleep 0.5
+  select_default_group
+  echo
+  do_status
+  notify "已连接（$IFACE，全局）"
+}
+
+do_off() {
+  if ! is_active; then
+    if iface_up; then
+      echo "服务已停但 $IFACE 还留着，跑：clash-vpn doctor" >&2
+      return 1
+    fi
+    echo "当前未运行。"
+    return 0
+  fi
+  echo "停止 $UNIT …"
+  sudo systemctl stop "$UNIT" || { echo "停止失败" >&2; notify "停止失败"; return 1; }
+  local i
+  for i in {1..20}; do
+    iface_up || break
+    sleep 0.5
+  done
+  if iface_up; then
+    echo "接口 $IFACE 仍然存在，跑：clash-vpn doctor" >&2
+    notify "已停止，但接口残留"
+    return 1
+  fi
+  echo "已断开。"
+  notify "已断开"
+}
+
+do_panel() {
+  if ! is_active; then
+    echo "服务没在跑，面板打不开。先：clash-vpn on" >&2
+    return 1
+  fi
+  local s
+  s=$(secret) || { echo "读不到 secret：$CONF" >&2; return 1; }
+  echo "面板地址 http://127.0.0.1:${CTRL_PORT}/ui/"
+  # secret 只打到终端，不进日志（stdout 会被 tee 写进 600 的日志文件）
+  if { true >/dev/tty; } 2>/dev/null; then
+    printf 'secret   %s\n' "$s" > /dev/tty
+  else
+    echo "secret   此处不显示；请在终端里跑 clash-vpn secret"
+  fi
+  xdg-open "http://127.0.0.1:${CTRL_PORT}/ui/" >/dev/null 2>&1 &
+}
+
+do_log() {
+  if journalctl -u "$UNIT" -n 80 --no-pager -q 2>/dev/null; then
+    return 0
+  fi
+  sudo journalctl -u "$UNIT" -n 80 --no-pager
+}
+
+do_doctor() {
+  echo "== 服务 =="
+  systemctl is-active "$UNIT" 2>/dev/null || true
+  echo "== 接口 =="
+  ip -brief addr show "$IFACE" 2>/dev/null || echo "$IFACE 不存在"
+
+  if ! is_active && iface_up; then
+    echo "-- 清理残留接口 $IFACE"
+    sudo ip link del "$IFACE" 2>/dev/null || true
+  fi
+
+  if ! is_active; then
+    local n=0
+    while ip rule list 2>/dev/null | grep -q 'lookup 2022'; do
+      sudo ip rule del table 2022 2>/dev/null || break
+      (( n++ > 8 )) && break
+    done
+    sudo ip route flush table 2022 2>/dev/null || true
+    if [[ $n -gt 0 ]]; then
+      echo "-- 清掉了 $n 条指向 table 2022 的残留 ip rule"
+    fi
+  fi
+
+  echo "== 配置语法 =="
+  if command -v mihomo >/dev/null 2>&1; then
+    # unit 里给的是 Environment=SAFE_PATHS=...，这里手动带上同样的值，
+    # 否则 mihomo -t 会因为 external-ui 在配置目录外而误报。
+    SAFE_PATHS="$UI_DIR" mihomo -t -d "$CONF_DIR" 2>&1 | tail -5
+  else
+    echo "mihomo 未安装"
+  fi
+
+  echo "== 端口 =="
+  local port owner
+  for port in "$MIXED_PORT" "$CTRL_PORT"; do
+    if owner=$(port_owner "$port"); then
+      printf '  %-5s 被 %s 占用\n' "$port" "$owner"
+    else
+      printf '  %-5s 空闲\n' "$port"
+    fi
+  done
+}
+
+do_reload() {
+  [[ -r $CONF ]] || { echo "缺少配置：$CONF" >&2; return 1; }
+  local s
+  s=$(secret) || { echo "读不到 secret" >&2; return 1; }
+  if ! is_active; then
+    echo "服务没在跑；下次 clash-vpn on 时生效。"
+    return 0
+  fi
+  echo "热重载配置（不需要 sudo，TUN 会短暂重建）…"
+  curl -sf --max-time 20 -o /dev/null -X PUT \
+    -H "Authorization: Bearer $s" -H 'Content-Type: application/json' \
+    -d "{\"path\": \"$CONF\"}" \
+    "http://127.0.0.1:${CTRL_PORT}/configs?force=true" || {
+    echo "重载失败。看：clash-vpn log" >&2
+    return 1
+  }
+  sleep 2
+  select_default_group
+  echo
+  do_status
+}
+
+# secret 轮换：改配置 -> 重启服务。控制器只在启动时读 secret，热重载改不掉它。
+do_secret() {
+  if [[ ${1:-} != rotate ]]; then
+    local v
+    v=$(secret) || { echo "读不到 secret：$CONF" >&2; return 1; }
+    if { true >/dev/tty; } 2>/dev/null; then
+      printf '%s\n' "$v" > /dev/tty
+    else
+      echo "没有可用终端；请在终端里跑 clash-vpn secret" >&2
+      return 1
+    fi
+    return
+  fi
+  local s i
+  s=$(openssl rand -hex 24)
+  awk -v s="$s" '
+    /^secret:/ && !done { printf "secret: \"%s\"\n", s; done = 1; next }
+    { print }
+  ' "$CONF" > "$CONF.tmp" && chmod 600 "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+  echo "secret 已写进配置。"
+  if is_active; then
+    echo "控制器不热重载 secret，重启服务才生效（sudo 要密码）…"
+    sudo systemctl restart "$UNIT" || { echo "重启失败" >&2; return 1; }
+    for i in {1..24}; do iface_up && break; sleep 0.5; done
+    sleep 1
+    select_default_group
+  fi
+  echo "面板里请重新填 secret（clash-vpn panel 可查）。"
+  echo
+  do_status
+}
+
+case "${1:-toggle}" in
+  on|start|up)      do_on ;;
+  off|stop|down)    do_off ;;
+  toggle)           if is_active; then do_off; else do_on; fi ;;
+  status)           do_status ;;
+  panel|ui)         do_panel ;;
+  log)              do_log ;;
+  doctor|fix)       do_doctor ;;
+  reload)           do_reload ;;
+  secret)           do_secret "${2:-}" ;;
+  *)
+    echo "用法: clash-vpn [toggle|on|off|status|panel|log|doctor|reload|secret [rotate]]" >&2
+    exit 2
+    ;;
+esac

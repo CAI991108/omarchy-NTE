@@ -29,8 +29,8 @@
   // "about": {"icon":"","label":"About","action":"omarchy-launch-or-focus-tui \"zsh -c 'fastfetch; read -k 1'\""},
   // 语音听写：按需启停 + 模型选择（见 topics/voxtype/）
   "voxtype": { "icon": "󰍬", "label": "Voxtype", "description": "语音听写" },
-  "voxtype.toggle": { "icon": "󰐊", "label": "启动 / 停止", "action": "~/文档/deepseek-harness/default-workspace/topics/voxtype/voxtype-ctl.sh toggle", "description": "按需启动或停止听写服务" },
-  "voxtype.auto": { "icon": "󰚥", "label": "模型：跟随电源", "action": "~/文档/deepseek-harness/default-workspace/topics/voxtype/voxtype-ctl.sh use auto", "checked": "test ! -e ~/.config/voxtype/model-override", "description": "接电用 turbo、电池用 small" },
-  "voxtype.small": { "icon": "󰾆", "label": "模型：small（省电）", "action": "~/文档/deepseek-harness/default-workspace/topics/voxtype/voxtype-ctl.sh use small", "checked": "test \"$(cat ~/.config/voxtype/model-override 2>/dev/null)\" = small", "description": "CPU 上约 3.4 秒" },
-  "voxtype.turbo": { "icon": "󰓅", "label": "模型：turbo（最准）", "action": "~/文档/deepseek-harness/default-workspace/topics/voxtype/voxtype-ctl.sh use large-v3-turbo", "checked": "test \"$(cat ~/.config/voxtype/model-override 2>/dev/null)\" = large-v3-turbo", "description": "独显上约 0.95 秒" }
+  "voxtype.toggle": { "icon": "󰐊", "label": "启动 / 停止", "action": "~/.local/bin/voxtype-ctl toggle", "description": "按需启动或停止听写服务" },
+  "voxtype.auto": { "icon": "󰚥", "label": "模型：跟随电源", "action": "~/.local/bin/voxtype-ctl use auto", "checked": "test ! -e ~/.config/voxtype/model-override", "description": "接电用 turbo、电池用 small" },
+  "voxtype.small": { "icon": "󰾆", "label": "模型：small（省电）", "action": "~/.local/bin/voxtype-ctl use small", "checked": "test \"$(cat ~/.config/voxtype/model-override 2>/dev/null)\" = small", "description": "CPU 上约 3.4 秒" },
+  "voxtype.turbo": { "icon": "󰓅", "label": "模型：turbo（最准）", "action": "~/.local/bin/voxtype-ctl use large-v3-turbo", "checked": "test \"$(cat ~/.config/voxtype/model-override 2>/dev/null)\" = large-v3-turbo", "description": "独显上约 0.95 秒" }
 }

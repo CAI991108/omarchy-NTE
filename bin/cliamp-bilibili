@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Launch cliamp with a Bilibili playlist.
 # Default: the combined "B站 - 全部" playlist created by
-# topics/cliamp/sync-bilibili-playlists.py.
+# cliamp-sync-bilibili.
 set -euo pipefail
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then

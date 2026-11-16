@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""把 B 站公开合集/列表同步成 cliamp 本地 TOML 播放列表。
+
+为什么需要它：cliamp 直接吃 `space.bilibili.com/<uid>/lists/<id>` 时，走的是
+yt-dlp --flat-playlist；B 站合集的扁平条目没有 title，cliamp 只能回退成
+"UP 主 - BV 号"。这个脚本改用 B 站自己的合集接口取真实标题，写成 cliamp 的
+TOML 播放列表，所以界面显示的是歌名而不是视频号。
+
+用法：
+  cliamp-sync-bilibili                 # 写入 ~/.config/cliamp/playlists
+  cliamp-sync-bilibili --out /tmp/x    # 写到别处先看
+  cliamp-sync-bilibili --uid 496958358 # 只同步一个 UID
+  cliamp-sync-bilibili --dry-run       # 只打印统计，不写文件
+"""
+
+from __future__ import annotations
+
+import argparse
+import http.cookiejar
+import json
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+UIDS = [
+    678649498,
+    496958358,
+    607217518,
+    675948095,
+    2038712551,
+]
+UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+)
+API = "https://api.bilibili.com"
+PLAYLIST_PREFIX = "B站 - "
+
+# B 站 API 没有会话 cookie 时会返回 -352（风控）。先访问一次首页拿 buvid3/b_nut，
+# 后续请求复用同一个 cookie jar；公开合集不需要登录。
+COOKIE_JAR = http.cookiejar.CookieJar()
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIE_JAR))
+
+
+def warmup() -> None:
+    try:
+        req = urllib.request.Request(
+            "https://www.bilibili.com",
+            headers={"User-Agent": UA, "Accept": "text/html,application/xhtml+xml"},
+        )
+        with OPENER.open(req, timeout=20) as resp:
+            resp.read(4096)
+    except Exception:
+        # 拿不到 cookie 也继续；公开接口有时不加 cookie 也能用。
+        pass
+
+
+def fetch_json(url: str, referer: str, tries: int = 4) -> dict:
+    last = None
+    for attempt in range(1, tries + 1):
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": UA,
+                "Referer": referer,
+                "Accept": "application/json, text/plain, */*",
+            },
+        )
+        try:
+            with OPENER.open(req, timeout=30) as resp:
+                data = json.load(resp)
+            if data.get("code") != 0:
+                raise RuntimeError(f"{url}: code={data.get('code')} message={data.get('message')}")
+            return data.get("data") or {}
+        except Exception as exc:  # noqa: BLE001 - retry all transport/API errors
+            last = exc
+            if attempt < tries:
+                time.sleep(0.8 * attempt)
+    raise RuntimeError(f"request failed after {tries} tries: {url}: {last}")
+
+
+def user_name(mid: int) -> str:
+    data = fetch_json(
+        f"{API}/x/web-interface/card?mid={mid}",
+        f"https://space.bilibili.com/{mid}",
+    )
+    return str((data.get("card") or {}).get("name") or f"UID{mid}").strip()
+
+
+def list_collections(mid: int) -> tuple[list[dict], list[dict]]:
+    data = fetch_json(
+        f"{API}/x/polymer/web-space/seasons_series_list"
+        f"?mid={mid}&page_num=1&page_size=20",
+        f"https://space.bilibili.com/{mid}/lists",
+    )
+    items = (data.get("items_lists") or {})
+    seasons = []
+    for entry in items.get("seasons_list") or []:
+        meta = entry.get("meta") or {}
+        seasons.append(
+            {
+                "kind": "season",
+                "id": int(meta.get("season_id") or 0),
+                "title": str(meta.get("title") or meta.get("name") or "").strip(),
+                "description": str(meta.get("description") or "").strip(),
+                "total": int(meta.get("total") or 0),
+            }
+        )
+    series = []
+    for entry in items.get("series_list") or []:
+        meta = entry.get("meta") or {}
+        series.append(
+            {
+                "kind": "series",
+                "id": int(meta.get("series_id") or 0),
+                "title": str(meta.get("title") or meta.get("name") or "").strip(),
+                "description": str(meta.get("description") or "").strip(),
+                "total": int(meta.get("total") or 0),
+            }
+        )
+    return [x for x in seasons if x["id"]], [x for x in series if x["id"]]
+
+
+def season_archives(mid: int, season_id: int) -> list[dict]:
+    archives: list[dict] = []
+    page = 1
+    while True:
+        data = fetch_json(
+            f"{API}/x/polymer/web-space/seasons_archives_list"
+            f"?mid={mid}&season_id={season_id}&page_num={page}&page_size=30",
+            f"https://space.bilibili.com/{mid}/lists",
+        )
+        batch = data.get("archives") or []
+        archives.extend(batch)
+        total = int(
+            (data.get("meta") or {}).get("total")
+            or (data.get("page") or {}).get("total")
+            or 0
+        )
+        if not batch or (total and len(archives) >= total):
+            break
+        page += 1
+        time.sleep(0.2)
+    return archives
+
+
+def series_archives(mid: int, series_id: int) -> list[dict]:
+    archives: list[dict] = []
+    page = 1
+    while True:
+        data = fetch_json(
+            f"{API}/x/series/archives"
+            f"?mid={mid}&series_id={series_id}&only_normal=true&sort=asc"
+            f"&pn={page}&ps=30",
+            f"https://space.bilibili.com/{mid}/lists",
+        )
+        batch = data.get("archives") or []
+        archives.extend(batch)
+        total = int((data.get("page") or {}).get("total") or 0)
+        if not batch or (total and len(archives) >= total):
+            break
+        page += 1
+        time.sleep(0.2)
+    return archives
+
+
+def safe_name(text: str, limit: int = 90) -> str:
+    text = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", text)
+    text = re.sub(r"\s+", " ", text).strip(" .-")
+    return text[:limit].rstrip(" .-") or "未命名"
+
+
+def toml_str(value: str) -> str:
+    value = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
+    value = "".join(ch for ch in value if ord(ch) >= 0x20)
+    return f'"{value}"'
+
+
+def track_lines(track: dict, index: int) -> list[str]:
+    lines = [
+        "[[track]]",
+        f"path = {toml_str(track['url'])}",
+        f"title = {toml_str(track['title'])}",
+        f"artist = {toml_str(track['artist'])}",
+    ]
+    if track.get("album"):
+        lines.append(f"album = {toml_str(track['album'])}")
+    if track.get("duration"):
+        lines.append(f"duration_secs = {int(track['duration'])}")
+    if index:
+        lines.append(f"track_number = {index}")
+    return lines
+
+
+def write_playlist(path: Path, title: str, tracks: list[dict], source: str) -> None:
+    lines = [
+        f"# {title}",
+        f"# 来源：{source}",
+        "# 由 cliamp-sync-bilibili 生成；重跑会覆盖本文件。",
+        "",
+    ]
+    for idx, track in enumerate(tracks, 1):
+        lines.extend(track_lines(track, idx))
+        lines.append("")
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def archive_track(archive: dict, artist: str, album: str) -> dict | None:
+    bvid = str(archive.get("bvid") or "").strip()
+    if not bvid:
+        return None
+    title = str(archive.get("title") or "").strip() or bvid
+    return {
+        "url": f"https://www.bilibili.com/video/{bvid}",
+        "bvid": bvid,
+        "title": title,
+        "artist": artist,
+        "album": album,
+        "duration": int(archive.get("duration") or 0),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path.home() / ".config/cliamp/playlists",
+        help="输出目录（默认 ~/.config/cliamp/playlists）",
+    )
+    parser.add_argument("--uid", type=int, action="append", help="只同步指定 UID，可重复")
+    parser.add_argument("--dry-run", action="store_true", help="只打印，不写文件")
+    parser.add_argument("--no-master", action="store_true", help="不写合并列表 B站 - 全部")
+    parser.add_argument(
+        "--with-master",
+        action="store_true",
+        help="配合 --uid：也从本次子集重写合并列表（默认 --uid 不会动它）",
+    )
+    args = parser.parse_args()
+
+    uids = args.uid or UIDS
+    warmup()
+    out_dir: Path = args.out.expanduser()
+    if not args.dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    total_playlists = 0
+    total_tracks = 0
+    master: list[dict] = []
+    master_seen: set[str] = set()
+
+    for mid in uids:
+        name = user_name(mid)
+        seasons, series = list_collections(mid)
+        print(f"\n{name} ({mid})：{len(seasons)} 个合集，{len(series)} 个列表")
+        for coll in seasons + series:
+            if coll["kind"] == "season":
+                archives = season_archives(mid, coll["id"])
+            else:
+                archives = series_archives(mid, coll["id"])
+            album = coll["title"]
+            tracks = []
+            for archive in archives:
+                track = archive_track(archive, name, album)
+                if track:
+                    tracks.append(track)
+            if not tracks:
+                print(f"  - {coll['kind']} {coll['id']} {album!r}: 0 条，跳过")
+                continue
+            filename = f"{PLAYLIST_PREFIX}{safe_name(name)} - {safe_name(album)}.toml"
+            path = out_dir / filename
+            source = (
+                f"https://space.bilibili.com/{mid}/lists/{coll['id']}"
+                f" ({coll['kind']})"
+            )
+            if not args.dry_run:
+                write_playlist(path, f"{PLAYLIST_PREFIX}{name} - {album}", tracks, source)
+            print(f"  - {coll['kind']} {coll['id']} {album!r}: {len(tracks)} 条 -> {filename}")
+            total_playlists += 1
+            total_tracks += len(tracks)
+            for track in tracks:
+                if track["bvid"] not in master_seen:
+                    master_seen.add(track["bvid"])
+                    master.append(track)
+
+    write_master = bool(master) and not args.no_master and (not args.uid or args.with_master)
+    if master and write_master:
+        filename = f"{PLAYLIST_PREFIX}全部.toml"
+        path = out_dir / filename
+        if not args.dry_run:
+            write_playlist(
+                path,
+                f"{PLAYLIST_PREFIX}全部",
+                master,
+                "以上全部公开合集/列表（按 UID 顺序去重）",
+            )
+        print(f"\n汇总：{len(master)} 条去重曲目 -> {filename}")
+    elif master:
+        print(
+            f"\n汇总：本次 {len(master)} 条去重曲目；按 --uid/--no-master 约定未改写"
+            f"「{PLAYLIST_PREFIX}全部」，跑一次不带 --uid 的完整同步即可重建。"
+        )
+    print(
+        f"\n完成：{total_playlists} 个播放列表，{total_tracks} 条曲目"
+        + ("（dry-run，未写文件）" if args.dry_run else f"，输出 {out_dir}")
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
