@@ -16,6 +16,15 @@ Deployment is a **copy**, not a symlink: Omarchy's `omarchy-refresh-config` runs
 overwrite files inside the repo (re-verified on 4.0's `/usr/bin/omarchy-refresh-config`).
 `install.sh` copies instead, backs up first, and is idempotent.
 
+**On the capture machine, never run bare `./install.sh`.** The repo is a snapshot of
+this machine, so a full deploy writes snapshot values over newer live state: it strips
+the `[user]`/`[credential]` sections out of `~/.config/git/config`, points fontconfig's
+monospace at the uninstalled `CaskaydiaMono Nerd Font`, replaces `mimeapps.list`
+(losing auto-added rows), and installs the repo-only `lazydocker/config.yml`,
+`dsh/README.md` and `bin/dsh-doctor`. Run `--dry-run` first, or deploy only the subset
+you need (`--wallpapers-only`, `--dsh-deps`, …). A **fresh** machine is the case where a
+full deploy is the intended path.
+
 Extra wallpapers are **pulled, not captured**: `install.sh --wallpapers[=<theme>|all]`
 reads `manifests/wallpapers.tsv` from
 [`omarchy-NTE-wallpaper`](https://github.com/CAI991108/omarchy-NTE-wallpaper), verifies

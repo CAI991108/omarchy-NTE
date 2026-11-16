@@ -191,6 +191,13 @@ omarchy pkg aur add catppuccin-fcitx5-git
 ./install.sh --wallpapers  # 可选：额外拉取当前主题的壁纸（默认不联网）
 ```
 
+> ⚠️ **在已经配置好的机器上不要裸跑 `./install.sh`。** 本仓库是从本机抓取的快照，全量部署会把
+> 快照写回 live：`~/.config/git/config` 的 `[user]` / `[credential]` 会被去掉（丢 git 身份），
+> `fontconfig/fonts.conf` 会把 monospace 指向本机没装的 `CaskaydiaMono Nerd Font`，
+> `mimeapps.list` 会覆盖应用自动追加的关联，另外还会装上 lazydocker 配置、`dsh/README.md`
+> 和 `bin/dsh-doctor`。**新机器**上全量部署才是预期用法；在已配置的机器上请先 `--dry-run`，
+> 或只跑需要的子集（如 `--wallpapers-only`）。
+
 <details>
 <summary><b><code>install.sh</code> 的行为（点击展开）</b></summary>
 
