@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "zcai.voxtype",
+  "name": "Voxtype",
+  "version": "0.1.0",
+  "author": "zcai",
+  "description": "Dictation status, on-demand start/stop",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Voxtype.qml" },
+  "barWidget": {
+    "displayName": "Voxtype",
+    "description": "Dictation status, on-demand start/stop",
+    "category": "Audio",
+    "allowMultiple": false
+  }
+}

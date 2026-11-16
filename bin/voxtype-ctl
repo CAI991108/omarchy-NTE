@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# voxtype-ctl —— voxtype 的按需启停（配合 ADR 0004）
+#
+#   status              一行：running/stopped · 模型 · 后端 · 电源
+#   warm                没跑就按电源选模型+后端并起服务，等到 idle；已在跑直接返回
+#   stop                停服务
+#   record start|stop   热键用：start 先 warm 再开录；stop 只是停录
+#   idle-stop [分钟]    空闲超过 N 分钟就停（默认 20，给 timer 调）
+#
+# 接电：独显 Vulkan + large-v3-turbo（实测 0.95 s）
+# 电池：核显 + small（不碰独显，让 dGPU 保持 P8）
+#
+# 只改两处宿主状态：voxtype 的 model 配置项、systemd user manager 的
+# VK_ICD_FILENAMES 变量；服务启停走 systemctl --user，不需要 sudo。
+
+set -uo pipefail
+
+STATE_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/voxtype"
+IDLE_MIN=${VOXTYPE_IDLE_MIN:-20}
+MODEL_AC=${VOXTYPE_MODEL_AC:-large-v3-turbo}
+MODEL_BAT=${VOXTYPE_MODEL_BAT:-small}
+NV_ICD=/usr/share/vulkan/icd.d/nvidia_icd.json
+OVERRIDE="${XDG_CONFIG_HOME:-$HOME/.config}/voxtype/model-override"
+
+on_ac() { [[ $(cat /sys/class/power_supply/ADP0/online 2>/dev/null) == 1 ]]; }
+# 手动覆盖优先于电源规则；"auto" 或没有文件时按电源选
+want_model() {
+  local o=""
+  [[ -r $OVERRIDE ]] && o=$(tr -d '[:space:]' < "$OVERRIDE")
+  case $o in
+    small|large-v3-turbo) echo "$o" ;;
+    *) if on_ac; then echo "$MODEL_AC"; else echo "$MODEL_BAT"; fi ;;
+  esac
+}
+running() { systemctl --user is-active --quiet voxtype; }
+state() { cat "$STATE_DIR/state" 2>/dev/null || echo unknown; }
+current_model() { voxtype config get whisper.model 2>/dev/null | tail -1; }
+backend_name() {
+  local b
+  b=$(voxtype setup gpu --status 2>/dev/null |
+    sed -n 's/^Active backend: \(.*\) (daemon pid [0-9]*)$/\1/p' | head -1)
+  echo "${b:-—}"
+}
+
+# 接电时把 Vulkan 绑到独显：不绑的话 Vulkan 默认取 0 号设备＝核显（实测见 BENCH.md）。
+# 不接电时撤掉，让独显回到 P8 睡眠。
+apply_backend() {
+  # ICD 文件不见了（驱动升级、包被删）就别去设一个死路径，否则 Vulkan 初始化会失败
+  if on_ac && [[ -f $NV_ICD ]]; then
+    systemctl --user set-environment VK_ICD_FILENAMES="$NV_ICD"
+  else
+    systemctl --user unset-environment VK_ICD_FILENAMES
+    on_ac && echo "注意：$NV_ICD 不存在，本次按核显跑" >&2
+  fi
+}
+
+wait_ready() {  # 最多等 5 秒
+  local i
+  for ((i = 0; i < 50; i++)); do
+    [[ $(state) == idle ]] && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+cmd_status() {
+  command -v voxtype >/dev/null || { echo "stopped · voxtype 未安装"; return 0; }
+  local r=stopped
+  running && r=running
+  printf '%s · %s · %s · %s\n' "$r" "$(current_model)" \
+    "$(backend_name)" "$(on_ac && echo 接电 || echo 电池)"
+}
+
+cmd_warm() {
+  command -v voxtype >/dev/null || { echo "voxtype 没装（pacman -S voxtype-bin）" >&2; return 1; }
+  if running; then
+    wait_ready && echo ready
+    return 0
+  fi
+  apply_backend
+  local want; want=$(want_model)
+  if [[ $(current_model) != "$want" ]]; then
+    voxtype config set whisper.model "$want" >/dev/null 2>&1
+  fi
+  systemctl --user start voxtype || return 1
+  if wait_ready; then echo ready; else echo "服务起了，但 5 秒内没进 idle" >&2; return 1; fi
+}
+
+cmd_stop() {
+  running && systemctl --user stop voxtype
+  echo stopped
+}
+
+cmd_toggle() { if running; then cmd_stop; else cmd_warm; fi; }
+
+# use <small|large-v3-turbo|auto>：写覆盖文件，然后重启服务让它生效
+cmd_use() {
+  local want=${1:-auto}
+  case $want in
+    small|large-v3-turbo) printf '%s\n' "$want" > "$OVERRIDE" ;;
+    auto) rm -f "$OVERRIDE" ;;
+    *) echo "用法：$0 use {small|large-v3-turbo|auto}" >&2; return 1 ;;
+  esac
+  local model; model=$(want_model)
+  if running; then
+    [[ $(current_model) != "$model" ]] && voxtype config set whisper.model "$model" >/dev/null 2>&1
+    systemctl --user restart voxtype
+    wait_ready && echo "已切到 $model（$want）"
+  else
+    echo "已记下 $want（下次 warm 时生效）"
+  fi
+}
+
+cmd_idle_stop() {
+  local limit=$(( ${1:-$IDLE_MIN} * 60 )) now mtime
+  running || return 0
+  [[ $(state) == idle ]] || return 0
+  now=$(date +%s)
+  mtime=$(stat -c %Y "$STATE_DIR/state" 2>/dev/null || echo "$now")
+  if (( now - mtime >= limit )); then
+    systemctl --user stop voxtype
+    echo "空闲 $(( (now - mtime) / 60 )) 分钟，已停"
+  fi
+}
+
+case ${1:-status} in
+  status) cmd_status ;;
+  warm)   cmd_warm ;;
+  stop)   cmd_stop ;;
+  record)
+    case ${2:-} in
+      start) cmd_warm >/dev/null && voxtype record start ;;
+      stop)  voxtype record stop ;;
+      *) echo "用法：$0 record start|stop" >&2; exit 1 ;;
+    esac ;;
+  toggle) cmd_toggle ;;
+  use)    cmd_use "${2:-auto}" ;;
+  idle-stop) cmd_idle_stop "${2:-}" ;;
+  *) echo "用法：$0 {status|warm|stop|toggle|use <model|auto>|record start|record stop|idle-stop [分钟]}" >&2; exit 1 ;;
+esac

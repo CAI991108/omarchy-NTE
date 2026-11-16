@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop the voxtype daemon when it has been idle
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/voxtype-ctl idle-stop 20

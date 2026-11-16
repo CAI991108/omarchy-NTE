@@ -41,6 +41,10 @@ Capture is a whole-file **snapshot**; templates are not merged. That is what let
 `shell.json` — which `omarchy bar` rewrites wholesale — be restored, and it keeps
 deployment copy-only.
 
+**Secrets never enter the repo.** `~/.config/mihomo/config.yaml` (the Clash subscription
+and controller secret, mode 600) is deliberately untracked even though no shipped
+template exists for it; `bin/clash-vpn` reads the secret from there at runtime.
+
 ## Capture convention: no absolute home paths
 
 When capturing a config file, store home-relative paths as `~` (or `$HOME`), never
